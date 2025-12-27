@@ -1,2 +1,5 @@
 ECHO is on.
+
 A
+B
+
