@@ -1,0 +1,15 @@
+Sprint na najbliższe dwa tygodnie zakłada stworzenie podstawowego, działającego backendu aplikacji BudgetBuddy oraz przygotowanie dokumentacji technicznej. Głównym celem jest wdrożenie kluczowych funkcjonalności oznaczonych jako wymagania „Must”, czyli rejestracji użytkownika, logowania, dodawania transakcji oraz ustawiania budżetu . Dzięki temu możliwe będzie uzyskanie pierwszej działającej wersji systemu, pokazującej jego ogólny sposób działania.
+
+Zakres prac obejmuje przede wszystkim backend. W pierwszej kolejności zostanie skonfigurowane środowisko projektowe  wstępnie w oparciu o Django oraz bazę danych PostgreSQL. Następnie zostaną zaprojektowane i zaimplementowane modele danych, takie jak użytkownik, transakcje, kategorie oraz budżet. Kolejnym krokiem będzie przygotowanie rozwiązania, które umożliwi rejestrację i logowanie użytkownika, dodawanie oraz pobieranie transakcji oraz ustawianie limitów budżetowych. Ważnym elementem będzie walidacja danych oraz zapewnienie, że każdy użytkownik ma dostęp wyłącznie do swoich danych, zgodnie z wymaganiami dotyczącymi bezpieczeństwa .
+
+Równolegle zostaną wykonane prace związane z bazą danych. Obejmą one zaprojektowanie schematu relacyjnego, określenie relacji pomiędzy tabelami oraz wykonanie migracji. Istotne będzie także zapewnienie integralności danych, tak aby operacje zapisu były poprawne i spójne .
+
+Drugim ważnym obszarem będzie dokumentacja backendu. Zostanie przygotowany opis architektury systemu, a także diagram ERD przedstawiający strukturę bazy danych. Dodatkowo powstanie plik README z instrukcją uruchomienia projektu.
+
+W ramach prac testowych zostaną przeprowadzone podstawowe testy funkcjonalne obejmujące rejestrację, logowanie oraz dodawanie transakcji. Sprawdzone zostaną również przypadki błędów, takie jak niepoprawne dane wejściowe, oraz kwestie bezpieczeństwa, w tym brak dostępu do danych innych użytkowników .
+
+Dodatkowo uporządkowane zostanie repozytorium projektu, w tym sposób pracy na gałęziach oraz proces przeglądu kodu. Przygotowane zostanie także proste środowisko frontendowe, umożliwiające przetestowanie działania backendu poprzez podstawowe formularze.
+
+Podział pracy w zespole będzie zgodny z przypisanymi rolami. Backend Developer odpowiada za implementację logiki i API, DBA za bazę danych, Security Engineer za bezpieczeństwo, QA Engineer za testy, Frontend Developer za prosty interfejs do testów, a Dokumentalista za przygotowanie dokumentacji. Project Manager/Analityk systemowy odpowiadają za koordynację prac oraz zgodność realizacji z wymaganiami.
+
+Efektem końcowym tego sprintu będzie działający backend aplikacji, który można uruchomić lokalnie i który umożliwia założenie konta, zalogowanie się oraz dodanie transakcji. Dane będą zapisywane w bazie danych, a do projektu będzie dołączona dokumentacja techniczna, co pozwoli na dalszy rozwój systemu w kolejnych etapach.
