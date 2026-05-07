@@ -11,6 +11,7 @@ from pathlib import Path
 
 KATALOG_GLOWNY = Path(__file__).resolve().parent
 SCIEZKA_BAZY = KATALOG_GLOWNY / "budgetbuddy.db"
+KATALOG_STATYCZNY = KATALOG_GLOWNY / "static"
 sesje: dict[str, int] = {}
 
 
@@ -75,124 +76,230 @@ def pobierz_komunikat(sciezka: str) -> str:
     return parametry.get("message", [""])[0]
 
 
-def strona(tresc: str, komunikat: str = "") -> str:
-    blok_komunikatu = f"<p><strong>{komunikat}</strong></p>" if komunikat else ""
+def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
+    blok_komunikatu = f'<div class="komunikat">{komunikat}</div>' if komunikat else ""
+    nawigacja = (
+        f"""
+        <div class="nawigacja">
+            <span>Zalogowano jako <strong>{uzytkownik['username']}</strong></span>
+            <a href="/dashboard">Panel</a>
+            <a href="/logout">Wyloguj</a>
+        </div>
+        """
+        if uzytkownik
+        else """
+        <div class="nawigacja">
+            <a href="/">Start</a>
+            <a href="/register">Rejestracja</a>
+            <a href="/login">Logowanie</a>
+        </div>
+        """
+    )
     return f"""<!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <title>BudgetBuddy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{tytul} | BudgetBuddy</title>
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-    <h1>BudgetBuddy</h1>
-    {blok_komunikatu}
-    {tresc}
+    <header class="naglowek">
+        <div>
+            <p class="etykieta">BudgetBuddy</p>
+            <h1>{tytul}</h1>
+        </div>
+        {nawigacja}
+    </header>
+    <main class="zawartosc">
+        {blok_komunikatu}
+        {tresc}
+    </main>
 </body>
 </html>
 """
 
 
 def strona_glowna() -> str:
-    return strona(
+    return uklad_strony(
+        "Prosty system kontroli budzetu",
         """
-        <p>Uporzadkowana wersja projektu po reorganizacji zespolu.</p>
-        <ul>
-            <li><a href="/register">Rejestracja</a></li>
-            <li><a href="/login">Logowanie</a></li>
-        </ul>
-        """
+        <section class="siatka">
+            <article class="karta">
+                <h2>Aktualny etap projektu</h2>
+                <p>
+                    Aplikacja po reorganizacji projektu odzyskuje podstawowe funkcje:
+                    rejestracje, logowanie, ustawianie budzetu i dodawanie transakcji.
+                </p>
+                <div class="przyciski">
+                    <a class="przycisk" href="/register">Zaloz konto</a>
+                    <a class="przycisk przycisk-jasny" href="/login">Zaloguj sie</a>
+                </div>
+            </article>
+            <article class="karta">
+                <h2>Zakres obecnej wersji</h2>
+                <ul>
+                    <li>Rejestracja uzytkownika</li>
+                    <li>Logowanie i wylogowanie</li>
+                    <li>Ustawianie budzetu miesiecznego</li>
+                    <li>Dodawanie transakcji</li>
+                    <li>Prosty panel uzytkownika</li>
+                </ul>
+            </article>
+        </section>
+        """,
     )
 
 
 def formularz_rejestracji(komunikat: str = "") -> str:
-    return strona(
+    return uklad_strony(
+        "Rejestracja",
         """
-        <h2>Rejestracja</h2>
-        <form method="post" action="/register">
-            <label>Login: <input type="text" name="username" required></label><br><br>
-            <label>Haslo: <input type="password" name="password" required></label><br><br>
-            <button type="submit">Zarejestruj</button>
-        </form>
+        <section class="sekcja-pojedyncza">
+            <article class="karta formularz-karta">
+                <h2>Nowe konto</h2>
+                <form method="post" action="/register">
+                    <label>Login
+                        <input type="text" name="username" required minlength="3">
+                    </label>
+                    <label>Haslo
+                        <input type="password" name="password" required minlength="4">
+                    </label>
+                    <button class="przycisk" type="submit">Zarejestruj</button>
+                </form>
+            </article>
+        </section>
         """,
         komunikat,
     )
 
 
 def formularz_logowania(komunikat: str = "") -> str:
-    return strona(
+    return uklad_strony(
+        "Logowanie",
         """
-        <h2>Logowanie</h2>
-        <form method="post" action="/login">
-            <label>Login: <input type="text" name="username" required></label><br><br>
-            <label>Haslo: <input type="password" name="password" required></label><br><br>
-            <button type="submit">Zaloguj</button>
-        </form>
+        <section class="sekcja-pojedyncza">
+            <article class="karta formularz-karta">
+                <h2>Wejscie do panelu</h2>
+                <form method="post" action="/login">
+                    <label>Login
+                        <input type="text" name="username" required>
+                    </label>
+                    <label>Haslo
+                        <input type="password" name="password" required>
+                    </label>
+                    <button class="przycisk" type="submit">Zaloguj</button>
+                </form>
+            </article>
+        </section>
         """,
         komunikat,
     )
 
 
-def panel_uzytkownika(uzytkownik: sqlite3.Row, budzet: sqlite3.Row | None, transakcje: list[sqlite3.Row], komunikat: str = "") -> str:
+def panel_uzytkownika(
+    uzytkownik: sqlite3.Row,
+    budzet: sqlite3.Row | None,
+    transakcje: list[sqlite3.Row],
+    komunikat: str = "",
+) -> str:
     limit = float(budzet["monthly_limit"]) if budzet else 0.0
     lista = ""
     for transakcja in transakcje:
         lista += (
-            f"<li>{transakcja['transaction_date']} | {transakcja['title']} | "
-            f"{transakcja['category']} | {transakcja['transaction_type']} | "
-            f"{transakcja['amount']:.2f} zl</li>"
+            f"<tr><td>{transakcja['transaction_date']}</td>"
+            f"<td>{transakcja['title']}</td>"
+            f"<td>{transakcja['category']}</td>"
+            f"<td>{'Wydatek' if transakcja['transaction_type'] == 'expense' else 'Przychod'}</td>"
+            f"<td>{transakcja['amount']:.2f} zl</td></tr>"
         )
     if not lista:
-        lista = "<li>Brak transakcji.</li>"
+        lista = '<tr><td colspan="5">Brak transakcji.</td></tr>'
 
-    return strona(
+    return uklad_strony(
+        "Panel uzytkownika",
         f"""
-        <p>Zalogowano jako: <strong>{uzytkownik['username']}</strong></p>
-        <p><a href="/logout">Wyloguj</a></p>
+        <section class="kafelki">
+            <article class="karta kafelek">
+                <h2>Budzet miesieczny</h2>
+                <p>{limit:.2f} zl</p>
+            </article>
+            <article class="karta kafelek">
+                <h2>Ostatnia aktualizacja</h2>
+                <p>{datetime.now().strftime("%Y-%m-%d")}</p>
+            </article>
+        </section>
 
-        <h2>Budzet</h2>
-        <p>Aktualny limit miesieczny: {limit:.2f} zl</p>
-        <form method="post" action="/budget">
-            <label>Limit miesieczny:
-                <input type="number" step="0.01" min="0" name="monthly_limit" value="{limit:.2f}" required>
-            </label>
-            <button type="submit">Zapisz budzet</button>
-        </form>
+        <section class="siatka">
+            <article class="karta">
+                <h2>Ustaw budzet</h2>
+                <form method="post" action="/budget">
+                    <label>Limit miesieczny
+                        <input type="number" step="0.01" min="0" name="monthly_limit" value="{limit:.2f}" required>
+                    </label>
+                    <button class="przycisk" type="submit">Zapisz budzet</button>
+                </form>
+            </article>
 
-        <h2>Dodaj transakcje</h2>
-        <form method="post" action="/transaction">
-            <label>Nazwa: <input type="text" name="title" required></label><br><br>
-            <label>Kwota: <input type="number" step="0.01" min="0.01" name="amount" required></label><br><br>
-            <label>Kategoria:
-                <select name="category">
-                    <option value="Jedzenie">Jedzenie</option>
-                    <option value="Transport">Transport</option>
-                    <option value="Rachunki">Rachunki</option>
-                    <option value="Rozrywka">Rozrywka</option>
-                    <option value="Inne">Inne</option>
-                </select>
-            </label><br><br>
-            <label>Typ:
-                <select name="transaction_type">
-                    <option value="expense">Wydatek</option>
-                    <option value="income">Przychod</option>
-                </select>
-            </label><br><br>
-            <label>Data:
-                <input type="date" name="transaction_date" value="{datetime.now().strftime("%Y-%m-%d")}" required>
-            </label><br><br>
-            <button type="submit">Dodaj transakcje</button>
-        </form>
+            <article class="karta">
+                <h2>Dodaj transakcje</h2>
+                <form method="post" action="/transaction">
+                    <label>Nazwa
+                        <input type="text" name="title" required>
+                    </label>
+                    <label>Kwota
+                        <input type="number" step="0.01" min="0.01" name="amount" required>
+                    </label>
+                    <label>Kategoria
+                        <select name="category">
+                            <option value="Jedzenie">Jedzenie</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Rachunki">Rachunki</option>
+                            <option value="Rozrywka">Rozrywka</option>
+                            <option value="Inne">Inne</option>
+                        </select>
+                    </label>
+                    <label>Typ
+                        <select name="transaction_type">
+                            <option value="expense">Wydatek</option>
+                            <option value="income">Przychod</option>
+                        </select>
+                    </label>
+                    <label>Data
+                        <input type="date" name="transaction_date" value="{datetime.now().strftime("%Y-%m-%d")}" required>
+                    </label>
+                    <button class="przycisk" type="submit">Dodaj transakcje</button>
+                </form>
+            </article>
+        </section>
 
-        <h2>Lista transakcji</h2>
-        <ul>{lista}</ul>
+        <section class="karta">
+            <h2>Lista transakcji</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Nazwa</th>
+                        <th>Kategoria</th>
+                        <th>Typ</th>
+                        <th>Kwota</th>
+                    </tr>
+                </thead>
+                <tbody>{lista}</tbody>
+            </table>
+        </section>
         """,
         komunikat,
+        uzytkownik,
     )
 
 
 class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         sciezka = urllib.parse.urlparse(self.path).path
+        if sciezka.startswith("/static/"):
+            self.obsluz_pliki_statyczne(sciezka)
+            return
         if sciezka == "/":
             self.odpowiedz_html(strona_glowna())
             return
@@ -206,16 +313,29 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             identyfikator_sesji = self.pobierz_id_sesji()
             if identyfikator_sesji:
                 sesje.pop(identyfikator_sesji, None)
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/login", "Wylogowano poprawnie."), wyczysc_cookie=True)
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem("/login", "Wylogowano poprawnie."),
+                wyczysc_cookie=True,
+            )
             return
         if sciezka == "/dashboard":
             uzytkownik = self.wymagaj_uzytkownika()
             if not uzytkownik:
                 return
             budzet, transakcje = self.pobierz_dane_panelu(uzytkownik["id"])
-            self.odpowiedz_html(panel_uzytkownika(uzytkownik, budzet, transakcje, pobierz_komunikat(self.path)))
+            self.odpowiedz_html(
+                panel_uzytkownika(
+                    uzytkownik,
+                    budzet,
+                    transakcje,
+                    pobierz_komunikat(self.path),
+                )
+            )
             return
-        self.odpowiedz_html(strona("<h2>404</h2><p>Nie znaleziono strony.</p>"), status=404)
+        self.odpowiedz_html(
+            uklad_strony("Nie znaleziono", "<section class='karta'><p>Nie znaleziono strony.</p></section>"),
+            status=404,
+        )
 
     def do_POST(self) -> None:
         sciezka = urllib.parse.urlparse(self.path).path
@@ -231,7 +351,10 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if sciezka == "/transaction":
             self.obsluz_transakcje()
             return
-        self.odpowiedz_html(strona("<p>Nieobslugiwane zadanie.</p>"), status=405)
+        self.odpowiedz_html(
+            uklad_strony("Blad", "<section class='karta'><p>Nieobslugiwane zadanie.</p></section>"),
+            status=405,
+        )
 
     def obsluz_rejestracje(self) -> None:
         dane = self.pobierz_dane_formularza()
@@ -250,7 +373,10 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 )
                 polaczenie.commit()
         except sqlite3.IntegrityError:
-            self.odpowiedz_html(formularz_rejestracji("Uzytkownik o takim loginie juz istnieje."), status=400)
+            self.odpowiedz_html(
+                formularz_rejestracji("Uzytkownik o takim loginie juz istnieje."),
+                status=400,
+            )
             return
 
         self.przekieruj(zbuduj_lacze_z_komunikatem("/login", "Konto zostalo utworzone."))
@@ -272,7 +398,10 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
 
         identyfikator_sesji = secrets.token_hex(16)
         sesje[identyfikator_sesji] = int(uzytkownik["id"])
-        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Zalogowano poprawnie."), session_id=identyfikator_sesji)
+        self.przekieruj(
+            zbuduj_lacze_z_komunikatem("/dashboard", "Zalogowano poprawnie."),
+            session_id=identyfikator_sesji,
+        )
 
     def obsluz_budzet(self) -> None:
         uzytkownik = self.wymagaj_uzytkownika()
@@ -327,7 +456,9 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return
 
         if not nazwa or typ not in {"expense", "income"}:
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Uzupelnij poprawnie formularz transakcji."))
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem("/dashboard", "Uzupelnij poprawnie formularz transakcji.")
+            )
             return
 
         with polaczenie_z_baza() as polaczenie:
@@ -390,6 +521,18 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             ).fetchall()
         return budzet, transakcje
 
+    def obsluz_pliki_statyczne(self, sciezka: str) -> None:
+        plik = KATALOG_STATYCZNY / sciezka.removeprefix("/static/")
+        if not plik.exists() or not plik.is_file():
+            self.send_error(404)
+            return
+        zawartosc = plik.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Content-Length", str(len(zawartosc)))
+        self.end_headers()
+        self.wfile.write(zawartosc)
+
     def odpowiedz_html(self, tresc: str, status: int = 200) -> None:
         dane = tresc.encode("utf-8")
         self.send_response(status)
@@ -398,7 +541,12 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(dane)
 
-    def przekieruj(self, lokalizacja: str, session_id: str | None = None, wyczysc_cookie: bool = False) -> None:
+    def przekieruj(
+        self,
+        lokalizacja: str,
+        session_id: str | None = None,
+        wyczysc_cookie: bool = False,
+    ) -> None:
         self.send_response(303)
         self.send_header("Location", lokalizacja)
         if session_id:

@@ -1,0 +1,173 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    background: #eef3f8;
+    color: #1d2733;
+}
+
+.naglowek {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 24px 32px;
+    background: #123c66;
+    color: #ffffff;
+}
+
+.naglowek h1,
+.naglowek p {
+    margin: 0;
+}
+
+.etykieta {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-bottom: 8px;
+}
+
+.nawigacja {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.nawigacja a {
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.zawartosc {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 18px 48px;
+}
+
+.komunikat {
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #dff4e7;
+    color: #155b33;
+}
+
+.siatka,
+.kafelki {
+    display: grid;
+    gap: 18px;
+}
+
+.siatka {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.kafelki {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 18px;
+}
+
+.sekcja-pojedyncza {
+    display: flex;
+    justify-content: center;
+}
+
+.karta {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 12px 28px rgba(18, 60, 102, 0.08);
+}
+
+.formularz-karta {
+    width: min(100%, 460px);
+}
+
+.kafelek p {
+    margin: 8px 0 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+form {
+    display: grid;
+    gap: 14px;
+}
+
+label {
+    display: grid;
+    gap: 6px;
+    font-weight: 600;
+}
+
+input,
+select,
+button {
+    font: inherit;
+}
+
+input,
+select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #bfd0df;
+    border-radius: 10px;
+    background: #fbfdff;
+}
+
+.przyciski {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.przycisk {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: fit-content;
+    padding: 11px 16px;
+    border: none;
+    border-radius: 10px;
+    background: #123c66;
+    color: #ffffff;
+    text-decoration: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.przycisk-jasny {
+    background: #f0b429;
+    color: #1d2733;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    text-align: left;
+    padding: 12px 10px;
+    border-bottom: 1px solid #e4ebf2;
+}
+
+@media (max-width: 720px) {
+    .naglowek {
+        padding: 20px;
+    }
+
+    .zawartosc {
+        padding: 20px 14px 36px;
+    }
+}
