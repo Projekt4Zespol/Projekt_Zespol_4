@@ -12,6 +12,7 @@ from pathlib import Path
 KATALOG_GLOWNY = Path(__file__).resolve().parent
 SCIEZKA_BAZY = KATALOG_GLOWNY / "budgetbuddy.db"
 KATALOG_STATYCZNY = KATALOG_GLOWNY / "static"
+DOZWOLONE_KATEGORIE = {"Jedzenie", "Transport", "Rachunki", "Rozrywka", "Inne"}
 sesje: dict[str, int] = {}
 
 
@@ -64,6 +65,14 @@ def przygotuj_baze() -> None:
 
 def haszuj_haslo(haslo: str) -> str:
     return hashlib.sha256(haslo.encode("utf-8")).hexdigest()
+
+
+def poprawny_login(login: str) -> bool:
+    return 3 <= len(login) <= 32
+
+
+def poprawne_haslo(haslo: str) -> bool:
+    return 4 <= len(haslo) <= 64
 
 
 def zbuduj_lacze_z_komunikatem(sciezka: str, komunikat: str) -> str:
@@ -361,8 +370,18 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         login = dane.get("username", "").strip()
         haslo = dane.get("password", "").strip()
 
-        if len(login) < 3 or len(haslo) < 4:
-            self.odpowiedz_html(formularz_rejestracji("Login lub haslo sa za krotkie."), status=400)
+        if not poprawny_login(login):
+            self.odpowiedz_html(
+                formularz_rejestracji("Login musi miec od 3 do 32 znakow."),
+                status=400,
+            )
+            return
+
+        if not poprawne_haslo(haslo):
+            self.odpowiedz_html(
+                formularz_rejestracji("Haslo musi miec od 4 do 64 znakow."),
+                status=400,
+            )
             return
 
         try:
@@ -385,6 +404,13 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         dane = self.pobierz_dane_formularza()
         login = dane.get("username", "").strip()
         haslo = dane.get("password", "").strip()
+
+        if not login or not haslo:
+            self.odpowiedz_html(
+                formularz_logowania("Uzupelnij login i haslo."),
+                status=400,
+            )
+            return
 
         with polaczenie_z_baza() as polaczenie:
             uzytkownik = polaczenie.execute(
@@ -413,7 +439,12 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             if limit < 0:
                 raise ValueError
         except ValueError:
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Niepoprawna wartosc budzetu."))
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Budzet musi byc liczba dodatnia lub rowna zero.",
+                )
+            )
             return
 
         teraz = datetime.now().isoformat(timespec="seconds")
@@ -452,12 +483,47 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             if kwota <= 0:
                 raise ValueError
         except ValueError:
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Niepoprawne dane transakcji."))
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Kwota i data transakcji musza miec poprawny format.",
+                )
+            )
             return
 
-        if not nazwa or typ not in {"expense", "income"}:
+        if not nazwa:
             self.przekieruj(
-                zbuduj_lacze_z_komunikatem("/dashboard", "Uzupelnij poprawnie formularz transakcji.")
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nazwa transakcji nie moze byc pusta.",
+                )
+            )
+            return
+
+        if len(nazwa) > 80:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nazwa transakcji moze miec maksymalnie 80 znakow.",
+                )
+            )
+            return
+
+        if kategoria not in DOZWOLONE_KATEGORIE:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Wybrano niepoprawna kategorie transakcji.",
+                )
+            )
+            return
+
+        if typ not in {"expense", "income"}:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Typ transakcji musi byc ustawiony jako wydatek lub przychod.",
+                )
             )
             return
 
