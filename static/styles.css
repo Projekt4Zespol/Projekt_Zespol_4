@@ -87,6 +87,10 @@ body {
     box-shadow: 0 12px 28px rgba(18, 60, 102, 0.08);
 }
 
+.karta-informacyjna {
+    margin-top: 18px;
+}
+
 .formularz-karta {
     width: min(100%, 460px);
 }
@@ -106,6 +110,14 @@ label {
     display: grid;
     gap: 6px;
     font-weight: 600;
+}
+
+.opis-pola,
+.opis-sekcji {
+    margin: -4px 0 0;
+    color: #5d6b7a;
+    font-size: 0.94rem;
+    line-height: 1.45;
 }
 
 input,

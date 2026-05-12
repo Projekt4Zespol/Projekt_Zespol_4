@@ -156,6 +156,13 @@ def strona_glowna() -> str:
                 </ul>
             </article>
         </section>
+        <section class="karta karta-informacyjna">
+            <h2>Co mozesz zrobic w tej wersji</h2>
+            <p>
+                Uzytkownik moze zalozyc konto, zalogowac sie, ustawic limit miesieczny oraz dodawac
+                podstawowe transakcje. W kolejnych etapach interfejs bedzie dalej rozszerzany.
+            </p>
+        </section>
         """,
     )
 
@@ -169,11 +176,13 @@ def formularz_rejestracji(komunikat: str = "") -> str:
                 <h2>Nowe konto</h2>
                 <form method="post" action="/register">
                     <label>Login
-                        <input type="text" name="username" required minlength="3">
+                        <input type="text" name="username" required minlength="3" maxlength="32" placeholder="np. jan.kowalski">
                     </label>
+                    <p class="opis-pola">Login powinien miec od 3 do 32 znakow.</p>
                     <label>Haslo
-                        <input type="password" name="password" required minlength="4">
+                        <input type="password" name="password" required minlength="4" maxlength="64" placeholder="minimum 4 znaki">
                     </label>
+                    <p class="opis-pola">Haslo powinno miec od 4 do 64 znakow.</p>
                     <button class="przycisk" type="submit">Zarejestruj</button>
                 </form>
             </article>
@@ -192,10 +201,10 @@ def formularz_logowania(komunikat: str = "") -> str:
                 <h2>Wejscie do panelu</h2>
                 <form method="post" action="/login">
                     <label>Login
-                        <input type="text" name="username" required>
+                        <input type="text" name="username" required placeholder="podaj login">
                     </label>
                     <label>Haslo
-                        <input type="password" name="password" required>
+                        <input type="password" name="password" required placeholder="podaj haslo">
                     </label>
                     <button class="przycisk" type="submit">Zaloguj</button>
                 </form>
@@ -242,6 +251,7 @@ def panel_uzytkownika(
         <section class="siatka">
             <article class="karta">
                 <h2>Ustaw budzet</h2>
+                <p class="opis-sekcji">Tutaj ustawiasz miesieczny limit wydatkow dla swojego konta.</p>
                 <form method="post" action="/budget">
                     <label>Limit miesieczny
                         <input type="number" step="0.01" min="0" name="monthly_limit" value="{limit:.2f}" required>
@@ -252,12 +262,13 @@ def panel_uzytkownika(
 
             <article class="karta">
                 <h2>Dodaj transakcje</h2>
+                <p class="opis-sekcji">Dodaj przychod lub wydatek, aby zaktualizowac swoja historie finansowa.</p>
                 <form method="post" action="/transaction">
                     <label>Nazwa
-                        <input type="text" name="title" required>
+                        <input type="text" name="title" required maxlength="80" placeholder="np. Zakupy spozywcze">
                     </label>
                     <label>Kwota
-                        <input type="number" step="0.01" min="0.01" name="amount" required>
+                        <input type="number" step="0.01" min="0.01" name="amount" required placeholder="0.00">
                     </label>
                     <label>Kategoria
                         <select name="category">
@@ -284,6 +295,7 @@ def panel_uzytkownika(
 
         <section class="karta">
             <h2>Lista transakcji</h2>
+            <p class="opis-sekcji">Ponizej widzisz wszystkie zapisane transakcje dla aktualnie zalogowanego uzytkownika.</p>
             <table>
                 <thead>
                     <tr>
