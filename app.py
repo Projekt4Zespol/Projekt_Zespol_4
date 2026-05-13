@@ -222,6 +222,14 @@ def panel_uzytkownika(
     komunikat: str = "",
 ) -> str:
     limit = float(budzet["monthly_limit"]) if budzet else 0.0
+    suma_wydatkow = sum(
+        float(transakcja["amount"]) for transakcja in transakcje if transakcja["transaction_type"] == "expense"
+    )
+    suma_przychodow = sum(
+        float(transakcja["amount"]) for transakcja in transakcje if transakcja["transaction_type"] == "income"
+    )
+    saldo = suma_przychodow - suma_wydatkow
+    pozostaly_limit = limit - suma_wydatkow
     lista = ""
     for transakcja in transakcje:
         lista += (
@@ -241,6 +249,22 @@ def panel_uzytkownika(
             <article class="karta kafelek">
                 <h2>Budzet miesieczny</h2>
                 <p>{limit:.2f} zl</p>
+            </article>
+            <article class="karta kafelek">
+                <h2>Suma wydatkow</h2>
+                <p>{suma_wydatkow:.2f} zl</p>
+            </article>
+            <article class="karta kafelek">
+                <h2>Suma przychodow</h2>
+                <p>{suma_przychodow:.2f} zl</p>
+            </article>
+            <article class="karta kafelek">
+                <h2>Saldo</h2>
+                <p>{saldo:.2f} zl</p>
+            </article>
+            <article class="karta kafelek">
+                <h2>Pozostaly limit</h2>
+                <p>{pozostaly_limit:.2f} zl</p>
             </article>
             <article class="karta kafelek">
                 <h2>Ostatnia aktualizacja</h2>
