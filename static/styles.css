@@ -101,6 +101,26 @@ body {
     font-weight: 700;
 }
 
+.etykieta-kafelka {
+    margin: 0 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    color: #5d6b7a;
+}
+
+.wartosc-dodatnia {
+    color: #1d7a45;
+}
+
+.wartosc-ujemna {
+    color: #b64141;
+}
+
+.wartosc-neutralna {
+    color: #1d2733;
+}
+
 form {
     display: grid;
     gap: 14px;

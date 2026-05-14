@@ -242,31 +242,49 @@ def panel_uzytkownika(
     if not lista:
         lista = '<tr><td colspan="5">Brak transakcji.</td></tr>'
 
+    klasa_salda = "wartosc-neutralna"
+    if saldo > 0:
+        klasa_salda = "wartosc-dodatnia"
+    elif saldo < 0:
+        klasa_salda = "wartosc-ujemna"
+
+    klasa_limitu = "wartosc-neutralna"
+    if pozostaly_limit > 0:
+        klasa_limitu = "wartosc-dodatnia"
+    elif pozostaly_limit < 0:
+        klasa_limitu = "wartosc-ujemna"
+
     return uklad_strony(
         "Panel uzytkownika",
         f"""
         <section class="kafelki">
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Budzet</p>
                 <h2>Budzet miesieczny</h2>
                 <p>{limit:.2f} zl</p>
             </article>
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Wydatki</p>
                 <h2>Suma wydatkow</h2>
                 <p>{suma_wydatkow:.2f} zl</p>
             </article>
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Przychody</p>
                 <h2>Suma przychodow</h2>
                 <p>{suma_przychodow:.2f} zl</p>
             </article>
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Bilans</p>
                 <h2>Saldo</h2>
-                <p>{saldo:.2f} zl</p>
+                <p class="{klasa_salda}">{saldo:.2f} zl</p>
             </article>
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Limit</p>
                 <h2>Pozostaly limit</h2>
-                <p>{pozostaly_limit:.2f} zl</p>
+                <p class="{klasa_limitu}">{pozostaly_limit:.2f} zl</p>
             </article>
             <article class="karta kafelek">
+                <p class="etykieta-kafelka">Status</p>
                 <h2>Ostatnia aktualizacja</h2>
                 <p>{datetime.now().strftime("%Y-%m-%d")}</p>
             </article>
