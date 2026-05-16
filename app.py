@@ -13,6 +13,12 @@ KATALOG_GLOWNY = Path(__file__).resolve().parent
 SCIEZKA_BAZY = KATALOG_GLOWNY / "budgetbuddy.db"
 KATALOG_STATYCZNY = KATALOG_GLOWNY / "static"
 DOZWOLONE_KATEGORIE = {"Jedzenie", "Transport", "Rachunki", "Rozrywka", "Inne"}
+DOZWOLONE_SORTOWANIA = {
+    "najnowsze": "transaction_date DESC, id DESC",
+    "najstarsze": "transaction_date ASC, id ASC",
+    "kwota_rosnaco": "amount ASC, id DESC",
+    "kwota_malejaco": "amount DESC, id DESC",
+}
 sesje: dict[str, int] = {}
 
 
@@ -83,6 +89,14 @@ def pobierz_komunikat(sciezka: str) -> str:
     zapytanie = urllib.parse.urlparse(sciezka).query
     parametry = urllib.parse.parse_qs(zapytanie)
     return parametry.get("message", [""])[0]
+
+
+def zbuduj_opcje_kategorii(wybrana_kategoria: str = "") -> str:
+    opcje = ['<option value="">Wszystkie kategorie</option>']
+    for kategoria in sorted(DOZWOLONE_KATEGORIE):
+        zaznaczenie = " selected" if kategoria == wybrana_kategoria else ""
+        opcje.append(f'<option value="{kategoria}"{zaznaczenie}>{kategoria}</option>')
+    return "".join(opcje)
 
 
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
@@ -219,6 +233,7 @@ def panel_uzytkownika(
     uzytkownik: sqlite3.Row,
     budzet: sqlite3.Row | None,
     transakcje: list[sqlite3.Row],
+    filtry: dict[str, str],
     komunikat: str = "",
 ) -> str:
     limit = float(budzet["monthly_limit"]) if budzet else 0.0
@@ -253,6 +268,17 @@ def panel_uzytkownika(
         klasa_limitu = "wartosc-dodatnia"
     elif pozostaly_limit < 0:
         klasa_limitu = "wartosc-ujemna"
+
+    wybrany_typ = filtry.get("transaction_type", "")
+    wybrana_kategoria = filtry.get("category", "")
+    wybrane_sortowanie = filtry.get("sortowanie", "najnowsze")
+    zaznacz_wszystkie_typy = " selected" if not wybrany_typ else ""
+    zaznacz_wydatki = " selected" if wybrany_typ == "expense" else ""
+    zaznacz_przychody = " selected" if wybrany_typ == "income" else ""
+    zaznacz_najnowsze = " selected" if wybrane_sortowanie == "najnowsze" else ""
+    zaznacz_najstarsze = " selected" if wybrane_sortowanie == "najstarsze" else ""
+    zaznacz_kwota_rosnaco = " selected" if wybrane_sortowanie == "kwota_rosnaco" else ""
+    zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
 
     return uklad_strony(
         "Panel uzytkownika",
@@ -336,6 +362,39 @@ def panel_uzytkownika(
         </section>
 
         <section class="karta">
+            <h2>Filtrowanie i sortowanie transakcji</h2>
+            <p class="opis-sekcji">
+                Tutaj mozesz zawezic liste transakcji do wybranej kategorii, typu oraz sposobu sortowania.
+            </p>
+            <form method="get" action="/dashboard">
+                <label>Kategoria
+                    <select name="category">
+                        {zbuduj_opcje_kategorii(wybrana_kategoria)}
+                    </select>
+                </label>
+                <label>Typ transakcji
+                    <select name="transaction_type">
+                        <option value=""{zaznacz_wszystkie_typy}>Wszystkie typy</option>
+                        <option value="expense"{zaznacz_wydatki}>Wydatki</option>
+                        <option value="income"{zaznacz_przychody}>Przychody</option>
+                    </select>
+                </label>
+                <label>Sortowanie
+                    <select name="sortowanie">
+                        <option value="najnowsze"{zaznacz_najnowsze}>Od najnowszych</option>
+                        <option value="najstarsze"{zaznacz_najstarsze}>Od najstarszych</option>
+                        <option value="kwota_rosnaco"{zaznacz_kwota_rosnaco}>Kwota rosnaco</option>
+                        <option value="kwota_malejaco"{zaznacz_kwota_malejaco}>Kwota malejaco</option>
+                    </select>
+                </label>
+                <div class="przyciski">
+                    <button class="przycisk" type="submit">Zastosuj filtry</button>
+                    <a class="przycisk przycisk-jasny" href="/dashboard">Wyczysc filtry</a>
+                </div>
+            </form>
+        </section>
+
+        <section class="karta">
             <h2>Lista transakcji</h2>
             <p class="opis-sekcji">Ponizej widzisz wszystkie zapisane transakcje dla aktualnie zalogowanego uzytkownika.</p>
             <table>
@@ -385,12 +444,14 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             uzytkownik = self.wymagaj_uzytkownika()
             if not uzytkownik:
                 return
-            budzet, transakcje = self.pobierz_dane_panelu(uzytkownik["id"])
+            filtry = self.pobierz_filtry_panelu()
+            budzet, transakcje = self.pobierz_dane_panelu(uzytkownik["id"], filtry)
             self.odpowiedz_html(
                 panel_uzytkownika(
                     uzytkownik,
                     budzet,
                     transakcje,
+                    filtry,
                     pobierz_komunikat(self.path),
                 )
             )
@@ -608,6 +669,30 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         dane = urllib.parse.parse_qs(surowe, keep_blank_values=True)
         return {klucz: wartosci[0] for klucz, wartosci in dane.items()}
 
+    def pobierz_parametry_zapytania(self) -> dict[str, str]:
+        zapytanie = urllib.parse.urlparse(self.path).query
+        dane = urllib.parse.parse_qs(zapytanie, keep_blank_values=True)
+        return {klucz: wartosci[0] for klucz, wartosci in dane.items()}
+
+    def pobierz_filtry_panelu(self) -> dict[str, str]:
+        parametry = self.pobierz_parametry_zapytania()
+        kategoria = parametry.get("category", "").strip()
+        typ = parametry.get("transaction_type", "").strip()
+        sortowanie = parametry.get("sortowanie", "najnowsze").strip() or "najnowsze"
+
+        if kategoria and kategoria not in DOZWOLONE_KATEGORIE:
+            kategoria = ""
+        if typ not in {"", "expense", "income"}:
+            typ = ""
+        if sortowanie not in DOZWOLONE_SORTOWANIA:
+            sortowanie = "najnowsze"
+
+        return {
+            "category": kategoria,
+            "transaction_type": typ,
+            "sortowanie": sortowanie,
+        }
+
     def pobierz_id_sesji(self) -> str | None:
         cookie = self.headers.get("Cookie")
         if not cookie:
@@ -632,13 +717,28 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return None
         return uzytkownik
 
-    def pobierz_dane_panelu(self, user_id: int) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    def pobierz_dane_panelu(self, user_id: int, filtry: dict[str, str]) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+        warunki = ["user_id = ?"]
+        parametry: list[object] = [user_id]
+
+        if filtry.get("category"):
+            warunki.append("category = ?")
+            parametry.append(filtry["category"])
+
+        if filtry.get("transaction_type"):
+            warunki.append("transaction_type = ?")
+            parametry.append(filtry["transaction_type"])
+
+        sortowanie_sql = DOZWOLONE_SORTOWANIA.get(filtry.get("sortowanie", "najnowsze"), DOZWOLONE_SORTOWANIA["najnowsze"])
+        zapytanie_transakcji = (
+            "SELECT * FROM transactions WHERE "
+            + " AND ".join(warunki)
+            + f" ORDER BY {sortowanie_sql}"
+        )
+
         with polaczenie_z_baza() as polaczenie:
             budzet = polaczenie.execute("SELECT * FROM budgets WHERE user_id = ?", (user_id,)).fetchone()
-            transakcje = polaczenie.execute(
-                "SELECT * FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC, id DESC",
-                (user_id,),
-            ).fetchall()
+            transakcje = polaczenie.execute(zapytanie_transakcji, tuple(parametry)).fetchall()
         return budzet, transakcje
 
     def obsluz_pliki_statyczne(self, sciezka: str) -> None:
