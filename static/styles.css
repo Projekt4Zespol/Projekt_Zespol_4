@@ -75,6 +75,13 @@ body {
     margin-bottom: 18px;
 }
 
+.siatka-analityczna {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
 .sekcja-pojedyncza {
     display: flex;
     justify-content: center;
@@ -89,6 +96,10 @@ body {
 
 .karta-informacyjna {
     margin-top: 18px;
+}
+
+.karta-analityczna {
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
 }
 
 .formularz-karta {
@@ -119,6 +130,110 @@ body {
 
 .wartosc-neutralna {
     color: #1d2733;
+}
+
+.naglowek-karty-analitycznej {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.naglowek-karty-analitycznej h2 {
+    margin: 0;
+}
+
+.naglowek-karty-analitycznej strong {
+    font-size: 1.35rem;
+    color: #123c66;
+}
+
+.tor-postepu {
+    width: 100%;
+    height: 14px;
+    border-radius: 999px;
+    background: #dbe6ef;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.wypelnienie-postepu {
+    height: 100%;
+    border-radius: 999px;
+}
+
+.postep-dobry {
+    background: linear-gradient(90deg, #2f8f63 0%, #59b98a 100%);
+}
+
+.postep-ostrzegawczy {
+    background: linear-gradient(90deg, #d48b1d 0%, #f0b429 100%);
+}
+
+.postep-alert {
+    background: linear-gradient(90deg, #a83b3b 0%, #dc5b5b 100%);
+}
+
+.postep-neutralny {
+    background: linear-gradient(90deg, #355f89 0%, #5e92c6 100%);
+}
+
+.metryki-analityczne {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.metryki-analityczne div {
+    padding: 12px;
+    border-radius: 12px;
+    background: #eef5fb;
+}
+
+.metryki-analityczne span {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.84rem;
+    color: #5d6b7a;
+}
+
+.metryki-analityczne strong {
+    font-size: 1rem;
+    color: #123c66;
+}
+
+.wiersz-wykresu + .wiersz-wykresu {
+    margin-top: 16px;
+}
+
+.naglowek-wykresu {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.tor-wykresu {
+    height: 14px;
+    border-radius: 999px;
+    background: #dbe6ef;
+    overflow: hidden;
+}
+
+.slupek-wykresu {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #123c66 0%, #4a84bf 100%);
+}
+
+.brak-danych-analitycznych {
+    padding: 18px;
+    border-radius: 14px;
+    background: #f5f8fb;
+    color: #536273;
 }
 
 form {
@@ -201,5 +316,9 @@ td {
 
     .zawartosc {
         padding: 20px 14px 36px;
+    }
+
+    .metryki-analityczne {
+        grid-template-columns: 1fr;
     }
 }

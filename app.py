@@ -99,6 +99,101 @@ def zbuduj_opcje_kategorii(wybrana_kategoria: str = "") -> str:
     return "".join(opcje)
 
 
+def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodow: float, transakcje: list[sqlite3.Row]) -> str:
+    wydatki_kategorii: dict[str, float] = {}
+    for transakcja in transakcje:
+        if transakcja["transaction_type"] != "expense":
+            continue
+        kategoria = str(transakcja["category"])
+        wydatki_kategorii[kategoria] = wydatki_kategorii.get(kategoria, 0.0) + float(transakcja["amount"])
+
+    wykorzystanie_budzetu = 0.0
+    if limit > 0:
+        wykorzystanie_budzetu = min((suma_wydatkow / limit) * 100, 100.0)
+
+    pasek_klasa = "postep-neutralny"
+    if wykorzystanie_budzetu >= 90:
+        pasek_klasa = "postep-alert"
+    elif wykorzystanie_budzetu >= 65:
+        pasek_klasa = "postep-ostrzegawczy"
+    elif wykorzystanie_budzetu > 0:
+        pasek_klasa = "postep-dobry"
+
+    laczna_kwota_wydatkow = sum(wydatki_kategorii.values())
+    wiersze_kategorii = ""
+    if laczna_kwota_wydatkow > 0:
+        for kategoria, kwota in sorted(wydatki_kategorii.items(), key=lambda element: element[1], reverse=True):
+            szerokosc = max((kwota / laczna_kwota_wydatkow) * 100, 8)
+            udzial = (kwota / laczna_kwota_wydatkow) * 100
+            wiersze_kategorii += f"""
+            <div class="wiersz-wykresu">
+                <div class="naglowek-wykresu">
+                    <span>{kategoria}</span>
+                    <strong>{kwota:.2f} zl</strong>
+                </div>
+                <div class="tor-wykresu">
+                    <div class="slupek-wykresu" style="width: {szerokosc:.1f}%"></div>
+                </div>
+                <p class="opis-pola">Udzial w wydatkach: {udzial:.1f}%</p>
+            </div>
+            """
+    else:
+        wiersze_kategorii = """
+        <div class="brak-danych-analitycznych">
+            <p>Dodaj wydatki, aby zobaczyc zestawienie kategorii i bardziej szczegolowa analityke.</p>
+        </div>
+        """
+
+    komunikat_budzetowy = "Budzet nie zostal jeszcze ustawiony."
+    if limit > 0:
+        komunikat_budzetowy = f"Wykorzystanie budzetu wynosi obecnie {wykorzystanie_budzetu:.1f}%."
+
+    return f"""
+    <section class="siatka-analityczna">
+        <article class="karta karta-analityczna">
+            <div class="naglowek-karty-analitycznej">
+                <div>
+                    <p class="etykieta-kafelka">Analiza budzetu</p>
+                    <h2>Wykorzystanie limitu miesiecznego</h2>
+                </div>
+                <strong>{wykorzystanie_budzetu:.1f}%</strong>
+            </div>
+            <div class="tor-postepu">
+                <div class="wypelnienie-postepu {pasek_klasa}" style="width: {wykorzystanie_budzetu:.1f}%"></div>
+            </div>
+            <p class="opis-sekcji">{komunikat_budzetowy}</p>
+            <div class="metryki-analityczne">
+                <div>
+                    <span>Wydatki</span>
+                    <strong>{suma_wydatkow:.2f} zl</strong>
+                </div>
+                <div>
+                    <span>Przychody</span>
+                    <strong>{suma_przychodow:.2f} zl</strong>
+                </div>
+                <div>
+                    <span>Limit</span>
+                    <strong>{limit:.2f} zl</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="karta karta-analityczna">
+            <div class="naglowek-karty-analitycznej">
+                <div>
+                    <p class="etykieta-kafelka">Wykres</p>
+                    <h2>Wydatki wedlug kategorii</h2>
+                </div>
+            </div>
+            <p class="opis-sekcji">
+                Sekcja pokazuje, ktore obszary generuja najwieksze koszty i gdzie budzet jest obciazany najmocniej.
+            </p>
+            {wiersze_kategorii}
+        </article>
+    </section>
+    """
+
+
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
     blok_komunikatu = f'<div class="komunikat">{komunikat}</div>' if komunikat else ""
     nawigacja = (
@@ -279,6 +374,7 @@ def panel_uzytkownika(
     zaznacz_najstarsze = " selected" if wybrane_sortowanie == "najstarsze" else ""
     zaznacz_kwota_rosnaco = " selected" if wybrane_sortowanie == "kwota_rosnaco" else ""
     zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
+    sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
 
     return uklad_strony(
         "Panel uzytkownika",
@@ -315,6 +411,8 @@ def panel_uzytkownika(
                 <p>{datetime.now().strftime("%Y-%m-%d")}</p>
             </article>
         </section>
+
+        {sekcja_analityczna}
 
         <section class="siatka">
             <article class="karta">
