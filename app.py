@@ -347,10 +347,16 @@ def panel_uzytkownika(
             f"<td>{transakcja['title']}</td>"
             f"<td>{transakcja['category']}</td>"
             f"<td>{'Wydatek' if transakcja['transaction_type'] == 'expense' else 'Przychod'}</td>"
-            f"<td>{transakcja['amount']:.2f} zl</td></tr>"
+            f"<td>{transakcja['amount']:.2f} zl</td>"
+            f"""<td>
+                <form method="post" action="/transaction/delete">
+                    <input type="hidden" name="transaction_id" value="{transakcja['id']}">
+                    <button class="przycisk" type="submit">Usun</button>
+                </form>
+            </td></tr>"""
         )
     if not lista:
-        lista = '<tr><td colspan="5">Brak transakcji.</td></tr>'
+        lista = '<tr><td colspan="6">Brak transakcji.</td></tr>'
 
     klasa_salda = "wartosc-neutralna"
     if saldo > 0:
@@ -503,6 +509,7 @@ def panel_uzytkownika(
                         <th>Kategoria</th>
                         <th>Typ</th>
                         <th>Kwota</th>
+                        <th>Akcje</th>
                     </tr>
                 </thead>
                 <tbody>{lista}</tbody>
@@ -572,6 +579,9 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return
         if sciezka == "/transaction":
             self.obsluz_transakcje()
+            return
+        if sciezka == "/transaction/delete":
+            self.obsluz_usuwanie_transakcji()
             return
         self.odpowiedz_html(
             uklad_strony("Blad", "<section class='karta'><p>Nieobslugiwane zadanie.</p></section>"),
@@ -760,6 +770,41 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             polaczenie.commit()
 
         self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala dodana."))
+
+    def obsluz_usuwanie_transakcji(self) -> None:
+        uzytkownik = self.wymagaj_uzytkownika()
+        if not uzytkownik:
+            return
+
+        dane = self.pobierz_dane_formularza()
+        identyfikator = dane.get("transaction_id", "").strip()
+
+        if not identyfikator.isdigit():
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nie wybrano poprawnej transakcji do usuniecia.",
+                )
+            )
+            return
+
+        with polaczenie_z_baza() as polaczenie:
+            wynik = polaczenie.execute(
+                "DELETE FROM transactions WHERE id = ? AND user_id = ?",
+                (int(identyfikator), uzytkownik["id"]),
+            )
+            polaczenie.commit()
+
+        if wynik.rowcount == 0:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nie znaleziono transakcji do usuniecia.",
+                )
+            )
+            return
+
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala usunieta."))
 
     def pobierz_dane_formularza(self) -> dict[str, str]:
         dlugosc = int(self.headers.get("Content-Length", "0"))
