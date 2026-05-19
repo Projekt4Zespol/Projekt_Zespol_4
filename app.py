@@ -1,4 +1,5 @@
 import hashlib
+import html
 import os
 import secrets
 import sqlite3
@@ -99,13 +100,92 @@ def zbuduj_opcje_kategorii(wybrana_kategoria: str = "") -> str:
     return "".join(opcje)
 
 
+def zbuduj_opcje_kategorii_formularza(wybrana_kategoria: str) -> str:
+    opcje = []
+    for kategoria in sorted(DOZWOLONE_KATEGORIE):
+        zaznaczenie = " selected" if kategoria == wybrana_kategoria else ""
+        opcje.append(f'<option value="{kategoria}"{zaznaczenie}>{kategoria}</option>')
+    return "".join(opcje)
+
+
+def zbuduj_formularz_transakcji(edytowana_transakcja: sqlite3.Row | None = None) -> str:
+    czy_edycja = edytowana_transakcja is not None
+    tytul = "Edytuj transakcje" if czy_edycja else "Dodaj transakcje"
+    opis = (
+        "Zmien dane wybranej transakcji i zapisz poprawiona wersje wpisu."
+        if czy_edycja
+        else "Dodaj przychod lub wydatek, aby zaktualizowac swoja historie finansowa."
+    )
+    akcja = "/transaction/update" if czy_edycja else "/transaction"
+    etykieta_przycisku = "Zapisz zmiany" if czy_edycja else "Dodaj transakcje"
+    nazwa = html.escape(str(edytowana_transakcja["title"])) if czy_edycja else ""
+    kwota = f'{float(edytowana_transakcja["amount"]):.2f}' if czy_edycja else ""
+    kategoria = str(edytowana_transakcja["category"]) if czy_edycja else "Jedzenie"
+    typ = str(edytowana_transakcja["transaction_type"]) if czy_edycja else "expense"
+    data_transakcji = (
+        str(edytowana_transakcja["transaction_date"])
+        if czy_edycja
+        else datetime.now().strftime("%Y-%m-%d")
+    )
+    zaznacz_wydatek = " selected" if typ == "expense" else ""
+    zaznacz_przychod = " selected" if typ == "income" else ""
+    pole_id = (
+        f'<input type="hidden" name="transaction_id" value="{edytowana_transakcja["id"]}">'
+        if czy_edycja
+        else ""
+    )
+    link_anuluj = (
+        '<a class="przycisk przycisk-jasny" href="/dashboard">Anuluj edycje</a>'
+        if czy_edycja
+        else ""
+    )
+
+    return f"""
+    <article class="karta">
+        <h2>{tytul}</h2>
+        <p class="opis-sekcji">{opis}</p>
+        <form method="post" action="{akcja}">
+            {pole_id}
+            <label>Nazwa
+                <input type="text" name="title" required maxlength="80" placeholder="np. Zakupy spozywcze" value="{nazwa}">
+            </label>
+            <label>Kwota
+                <input type="number" step="0.01" min="0.01" name="amount" required placeholder="0.00" value="{kwota}">
+            </label>
+            <label>Kategoria
+                <select name="category">
+                    {zbuduj_opcje_kategorii_formularza(kategoria)}
+                </select>
+            </label>
+            <label>Typ
+                <select name="transaction_type">
+                    <option value="expense"{zaznacz_wydatek}>Wydatek</option>
+                    <option value="income"{zaznacz_przychod}>Przychod</option>
+                </select>
+            </label>
+            <label>Data
+                <input type="date" name="transaction_date" value="{data_transakcji}" required>
+            </label>
+            <div class="przyciski">
+                <button class="przycisk" type="submit">{etykieta_przycisku}</button>
+                {link_anuluj}
+            </div>
+        </form>
+    </article>
+    """
+
+
 def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodow: float, transakcje: list[sqlite3.Row]) -> str:
     wydatki_kategorii: dict[str, float] = {}
+    liczba_wydatkow = 0
+    liczba_przychodow = 0
     for transakcja in transakcje:
-        if transakcja["transaction_type"] != "expense":
-            continue
-        kategoria = str(transakcja["category"])
-        wydatki_kategorii[kategoria] = wydatki_kategorii.get(kategoria, 0.0) + float(transakcja["amount"])
+        if transakcja["transaction_type"] == "expense":
+            liczba_wydatkow += 1
+            kategoria = str(transakcja["category"])
+            wydatki_kategorii[kategoria] = wydatki_kategorii.get(kategoria, 0.0) + float(transakcja["amount"])
+        elif transakcja["transaction_type"] == "income":
+            liczba_przychodow += 1
 
     wykorzystanie_budzetu = 0.0
     if limit > 0:
@@ -121,7 +201,9 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
 
     laczna_kwota_wydatkow = sum(wydatki_kategorii.values())
     wiersze_kategorii = ""
+    dominujaca_kategoria = "Brak danych"
     if laczna_kwota_wydatkow > 0:
+        dominujaca_kategoria = max(wydatki_kategorii.items(), key=lambda element: element[1])[0]
         for kategoria, kwota in sorted(wydatki_kategorii.items(), key=lambda element: element[1], reverse=True):
             szerokosc = max((kwota / laczna_kwota_wydatkow) * 100, 8)
             udzial = (kwota / laczna_kwota_wydatkow) * 100
@@ -147,6 +229,10 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
     komunikat_budzetowy = "Budzet nie zostal jeszcze ustawiony."
     if limit > 0:
         komunikat_budzetowy = f"Wykorzystanie budzetu wynosi obecnie {wykorzystanie_budzetu:.1f}%."
+
+    maksymalna_wartosc_porownania = max(suma_wydatkow, suma_przychodow, 1.0)
+    szerokosc_wydatkow = max((suma_wydatkow / maksymalna_wartosc_porownania) * 100, 10 if suma_wydatkow > 0 else 0)
+    szerokosc_przychodow = max((suma_przychodow / maksymalna_wartosc_porownania) * 100, 10 if suma_przychodow > 0 else 0)
 
     return f"""
     <section class="siatka-analityczna">
@@ -189,6 +275,47 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
                 Sekcja pokazuje, ktore obszary generuja najwieksze koszty i gdzie budzet jest obciazany najmocniej.
             </p>
             {wiersze_kategorii}
+        </article>
+
+        <article class="karta karta-analityczna">
+            <div class="naglowek-karty-analitycznej">
+                <div>
+                    <p class="etykieta-kafelka">Bilans i insighty</p>
+                    <h2>Porownanie przychodow i wydatkow</h2>
+                </div>
+            </div>
+            <div class="wiersz-wykresu">
+                <div class="naglowek-wykresu">
+                    <span>Wydatki</span>
+                    <strong>{suma_wydatkow:.2f} zl</strong>
+                </div>
+                <div class="tor-wykresu">
+                    <div class="slupek-wykresu" style="width: {szerokosc_wydatkow:.1f}%"></div>
+                </div>
+            </div>
+            <div class="wiersz-wykresu">
+                <div class="naglowek-wykresu">
+                    <span>Przychody</span>
+                    <strong>{suma_przychodow:.2f} zl</strong>
+                </div>
+                <div class="tor-wykresu">
+                    <div class="slupek-wykresu" style="width: {szerokosc_przychodow:.1f}%"></div>
+                </div>
+            </div>
+            <div class="metryki-analityczne">
+                <div>
+                    <span>Najwieksza kategoria</span>
+                    <strong>{dominujaca_kategoria}</strong>
+                </div>
+                <div>
+                    <span>Liczba wydatkow</span>
+                    <strong>{liczba_wydatkow}</strong>
+                </div>
+                <div>
+                    <span>Liczba przychodow</span>
+                    <strong>{liczba_przychodow}</strong>
+                </div>
+            </div>
         </article>
     </section>
     """
@@ -329,6 +456,7 @@ def panel_uzytkownika(
     budzet: sqlite3.Row | None,
     transakcje: list[sqlite3.Row],
     filtry: dict[str, str],
+    edytowana_transakcja: sqlite3.Row | None = None,
     komunikat: str = "",
 ) -> str:
     limit = float(budzet["monthly_limit"]) if budzet else 0.0
@@ -349,10 +477,13 @@ def panel_uzytkownika(
             f"<td>{'Wydatek' if transakcja['transaction_type'] == 'expense' else 'Przychod'}</td>"
             f"<td>{transakcja['amount']:.2f} zl</td>"
             f"""<td>
-                <form method="post" action="/transaction/delete">
-                    <input type="hidden" name="transaction_id" value="{transakcja['id']}">
-                    <button class="przycisk" type="submit">Usun</button>
-                </form>
+                <div class="przyciski">
+                    <a class="przycisk przycisk-jasny" href="/dashboard?edit_transaction_id={transakcja['id']}">Edytuj</a>
+                    <form method="post" action="/transaction/delete">
+                        <input type="hidden" name="transaction_id" value="{transakcja['id']}">
+                        <button class="przycisk" type="submit">Usun</button>
+                    </form>
+                </div>
             </td></tr>"""
         )
     if not lista:
@@ -381,6 +512,7 @@ def panel_uzytkownika(
     zaznacz_kwota_rosnaco = " selected" if wybrane_sortowanie == "kwota_rosnaco" else ""
     zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
     sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
+    formularz_transakcji = zbuduj_formularz_transakcji(edytowana_transakcja)
 
     return uklad_strony(
         "Panel uzytkownika",
@@ -432,37 +564,7 @@ def panel_uzytkownika(
                 </form>
             </article>
 
-            <article class="karta">
-                <h2>Dodaj transakcje</h2>
-                <p class="opis-sekcji">Dodaj przychod lub wydatek, aby zaktualizowac swoja historie finansowa.</p>
-                <form method="post" action="/transaction">
-                    <label>Nazwa
-                        <input type="text" name="title" required maxlength="80" placeholder="np. Zakupy spozywcze">
-                    </label>
-                    <label>Kwota
-                        <input type="number" step="0.01" min="0.01" name="amount" required placeholder="0.00">
-                    </label>
-                    <label>Kategoria
-                        <select name="category">
-                            <option value="Jedzenie">Jedzenie</option>
-                            <option value="Transport">Transport</option>
-                            <option value="Rachunki">Rachunki</option>
-                            <option value="Rozrywka">Rozrywka</option>
-                            <option value="Inne">Inne</option>
-                        </select>
-                    </label>
-                    <label>Typ
-                        <select name="transaction_type">
-                            <option value="expense">Wydatek</option>
-                            <option value="income">Przychod</option>
-                        </select>
-                    </label>
-                    <label>Data
-                        <input type="date" name="transaction_date" value="{datetime.now().strftime("%Y-%m-%d")}" required>
-                    </label>
-                    <button class="przycisk" type="submit">Dodaj transakcje</button>
-                </form>
-            </article>
+            {formularz_transakcji}
         </section>
 
         <section class="karta">
@@ -551,12 +653,14 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 return
             filtry = self.pobierz_filtry_panelu()
             budzet, transakcje = self.pobierz_dane_panelu(uzytkownik["id"], filtry)
+            edytowana_transakcja = self.pobierz_transakcje_do_edycji(uzytkownik["id"])
             self.odpowiedz_html(
                 panel_uzytkownika(
                     uzytkownik,
                     budzet,
                     transakcje,
                     filtry,
+                    edytowana_transakcja,
                     pobierz_komunikat(self.path),
                 )
             )
@@ -579,6 +683,9 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return
         if sciezka == "/transaction":
             self.obsluz_transakcje()
+            return
+        if sciezka == "/transaction/update":
+            self.obsluz_aktualizacje_transakcji()
             return
         if sciezka == "/transaction/delete":
             self.obsluz_usuwanie_transakcji()
@@ -695,59 +802,9 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if not uzytkownik:
             return
         dane = self.pobierz_dane_formularza()
-        nazwa = dane.get("title", "").strip()
-        kategoria = dane.get("category", "").strip() or "Inne"
-        typ = dane.get("transaction_type", "").strip()
-        data_transakcji = dane.get("transaction_date", "").strip()
-
-        try:
-            kwota = float(dane.get("amount", "0"))
-            datetime.strptime(data_transakcji, "%Y-%m-%d")
-            if kwota <= 0:
-                raise ValueError
-        except ValueError:
-            self.przekieruj(
-                zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
-                    "Kwota i data transakcji musza miec poprawny format.",
-                )
-            )
-            return
-
-        if not nazwa:
-            self.przekieruj(
-                zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
-                    "Nazwa transakcji nie moze byc pusta.",
-                )
-            )
-            return
-
-        if len(nazwa) > 80:
-            self.przekieruj(
-                zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
-                    "Nazwa transakcji moze miec maksymalnie 80 znakow.",
-                )
-            )
-            return
-
-        if kategoria not in DOZWOLONE_KATEGORIE:
-            self.przekieruj(
-                zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
-                    "Wybrano niepoprawna kategorie transakcji.",
-                )
-            )
-            return
-
-        if typ not in {"expense", "income"}:
-            self.przekieruj(
-                zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
-                    "Typ transakcji musi byc ustawiony jako wydatek lub przychod.",
-                )
-            )
+        dane_transakcji, blad = self.przygotuj_dane_transakcji(dane)
+        if blad:
+            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", blad))
             return
 
         with polaczenie_z_baza() as polaczenie:
@@ -759,17 +816,68 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 """,
                 (
                     uzytkownik["id"],
-                    nazwa,
-                    kwota,
-                    kategoria,
-                    typ,
-                    data_transakcji,
+                    dane_transakcji["title"],
+                    dane_transakcji["amount"],
+                    dane_transakcji["category"],
+                    dane_transakcji["transaction_type"],
+                    dane_transakcji["transaction_date"],
                     datetime.now().isoformat(timespec="seconds"),
                 ),
             )
             polaczenie.commit()
 
         self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala dodana."))
+
+    def obsluz_aktualizacje_transakcji(self) -> None:
+        uzytkownik = self.wymagaj_uzytkownika()
+        if not uzytkownik:
+            return
+
+        dane = self.pobierz_dane_formularza()
+        identyfikator = dane.get("transaction_id", "").strip()
+        if not identyfikator.isdigit():
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nie wybrano poprawnej transakcji do edycji.",
+                )
+            )
+            return
+
+        dane_transakcji, blad = self.przygotuj_dane_transakcji(dane)
+        if blad:
+            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", blad))
+            return
+
+        with polaczenie_z_baza() as polaczenie:
+            wynik = polaczenie.execute(
+                """
+                UPDATE transactions
+                SET title = ?, amount = ?, category = ?, transaction_type = ?, transaction_date = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    dane_transakcji["title"],
+                    dane_transakcji["amount"],
+                    dane_transakcji["category"],
+                    dane_transakcji["transaction_type"],
+                    dane_transakcji["transaction_date"],
+                    int(identyfikator),
+                    uzytkownik["id"],
+                ),
+            )
+            polaczenie.commit()
+
+        if wynik.rowcount == 0:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Nie znaleziono transakcji do edycji.",
+                )
+            )
+            return
+
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala zaktualizowana."))
 
     def obsluz_usuwanie_transakcji(self) -> None:
         uzytkownik = self.wymagaj_uzytkownika()
@@ -817,6 +925,40 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         dane = urllib.parse.parse_qs(zapytanie, keep_blank_values=True)
         return {klucz: wartosci[0] for klucz, wartosci in dane.items()}
 
+    def przygotuj_dane_transakcji(self, dane: dict[str, str]) -> tuple[dict[str, object], str]:
+        nazwa = dane.get("title", "").strip()
+        kategoria = dane.get("category", "").strip() or "Inne"
+        typ = dane.get("transaction_type", "").strip()
+        data_transakcji = dane.get("transaction_date", "").strip()
+
+        try:
+            kwota = float(dane.get("amount", "0"))
+            datetime.strptime(data_transakcji, "%Y-%m-%d")
+            if kwota <= 0:
+                raise ValueError
+        except ValueError:
+            return {}, "Kwota i data transakcji musza miec poprawny format."
+
+        if not nazwa:
+            return {}, "Nazwa transakcji nie moze byc pusta."
+
+        if len(nazwa) > 80:
+            return {}, "Nazwa transakcji moze miec maksymalnie 80 znakow."
+
+        if kategoria not in DOZWOLONE_KATEGORIE:
+            return {}, "Wybrano niepoprawna kategorie transakcji."
+
+        if typ not in {"expense", "income"}:
+            return {}, "Typ transakcji musi byc ustawiony jako wydatek lub przychod."
+
+        return {
+            "title": nazwa,
+            "amount": kwota,
+            "category": kategoria,
+            "transaction_type": typ,
+            "transaction_date": data_transakcji,
+        }, ""
+
     def pobierz_filtry_panelu(self) -> dict[str, str]:
         parametry = self.pobierz_parametry_zapytania()
         kategoria = parametry.get("category", "").strip()
@@ -835,6 +977,18 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             "transaction_type": typ,
             "sortowanie": sortowanie,
         }
+
+    def pobierz_transakcje_do_edycji(self, user_id: int) -> sqlite3.Row | None:
+        parametry = self.pobierz_parametry_zapytania()
+        identyfikator = parametry.get("edit_transaction_id", "").strip()
+        if not identyfikator.isdigit():
+            return None
+
+        with polaczenie_z_baza() as polaczenie:
+            return polaczenie.execute(
+                "SELECT * FROM transactions WHERE id = ? AND user_id = ?",
+                (int(identyfikator), user_id),
+            ).fetchone()
 
     def pobierz_id_sesji(self) -> str | None:
         cookie = self.headers.get("Cookie")
