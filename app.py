@@ -23,6 +23,10 @@ DOZWOLONE_SORTOWANIA = {
 sesje: dict[str, int] = {}
 
 
+def bezpieczny_tekst(wartosc: object) -> str:
+    return html.escape(str(wartosc), quote=True)
+
+
 def polaczenie_z_baza() -> sqlite3.Connection:
     polaczenie = sqlite3.connect(SCIEZKA_BAZY)
     polaczenie.row_factory = sqlite3.Row
@@ -322,11 +326,11 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
 
 
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
-    blok_komunikatu = f'<div class="komunikat">{komunikat}</div>' if komunikat else ""
+    blok_komunikatu = f'<div class="komunikat">{bezpieczny_tekst(komunikat)}</div>' if komunikat else ""
     nawigacja = (
         f"""
         <div class="nawigacja">
-            <span>Zalogowano jako <strong>{uzytkownik['username']}</strong></span>
+            <span>Zalogowano jako <strong>{bezpieczny_tekst(uzytkownik['username'])}</strong></span>
             <a href="/dashboard">Panel</a>
             <a href="/logout">Wyloguj</a>
         </div>
@@ -345,14 +349,14 @@ def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{tytul} | BudgetBuddy</title>
+    <title>{bezpieczny_tekst(tytul)} | BudgetBuddy</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <header class="naglowek">
         <div>
             <p class="etykieta">BudgetBuddy</p>
-            <h1>{tytul}</h1>
+            <h1>{bezpieczny_tekst(tytul)}</h1>
         </div>
         {nawigacja}
     </header>
@@ -471,9 +475,9 @@ def panel_uzytkownika(
     lista = ""
     for transakcja in transakcje:
         lista += (
-            f"<tr><td>{transakcja['transaction_date']}</td>"
-            f"<td>{transakcja['title']}</td>"
-            f"<td>{transakcja['category']}</td>"
+            f"<tr><td>{bezpieczny_tekst(transakcja['transaction_date'])}</td>"
+            f"<td>{bezpieczny_tekst(transakcja['title'])}</td>"
+            f"<td>{bezpieczny_tekst(transakcja['category'])}</td>"
             f"<td>{'Wydatek' if transakcja['transaction_type'] == 'expense' else 'Przychod'}</td>"
             f"<td>{transakcja['amount']:.2f} zl</td>"
             f"""<td>
@@ -1045,6 +1049,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return
         zawartosc = plik.read_bytes()
         self.send_response(200)
+        self.dodaj_naglowki_bezpieczenstwa()
         self.send_header("Content-Type", "text/css; charset=utf-8")
         self.send_header("Content-Length", str(len(zawartosc)))
         self.end_headers()
@@ -1053,6 +1058,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
     def odpowiedz_html(self, tresc: str, status: int = 200) -> None:
         dane = tresc.encode("utf-8")
         self.send_response(status)
+        self.dodaj_naglowki_bezpieczenstwa(dla_html=True)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(dane)))
         self.end_headers()
@@ -1065,12 +1071,25 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         wyczysc_cookie: bool = False,
     ) -> None:
         self.send_response(303)
+        self.dodaj_naglowki_bezpieczenstwa(dla_html=True)
         self.send_header("Location", lokalizacja)
         if session_id:
-            self.send_header("Set-Cookie", f"session_id={session_id}; HttpOnly; Path=/")
+            self.send_header("Set-Cookie", f"session_id={session_id}; HttpOnly; SameSite=Lax; Path=/")
         if wyczysc_cookie:
-            self.send_header("Set-Cookie", "session_id=deleted; HttpOnly; Path=/; Max-Age=0")
+            self.send_header("Set-Cookie", "session_id=deleted; HttpOnly; SameSite=Lax; Path=/; Max-Age=0")
         self.end_headers()
+
+    def dodaj_naglowki_bezpieczenstwa(self, dla_html: bool = False) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+        )
+        if dla_html:
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Pragma", "no-cache")
 
 
 def uruchom() -> None:
