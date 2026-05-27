@@ -112,6 +112,39 @@ def zbuduj_opcje_kategorii_formularza(wybrana_kategoria: str) -> str:
     return "".join(opcje)
 
 
+def klasa_kategorii(kategoria: str) -> str:
+    mapa = {
+        "Jedzenie": "znacznik-kategoria-jedzenie",
+        "Transport": "znacznik-kategoria-transport",
+        "Rachunki": "znacznik-kategoria-rachunki",
+        "Rozrywka": "znacznik-kategoria-rozrywka",
+        "Inne": "znacznik-kategoria-inne",
+    }
+    return mapa.get(kategoria, "znacznik-kategoria-inne")
+
+
+def zbuduj_podsumowanie_filtrow(filtry: dict[str, str]) -> str:
+    aktywne = []
+    if filtry.get("category"):
+        aktywne.append(f"Kategoria: {bezpieczny_tekst(filtry['category'])}")
+    if filtry.get("transaction_type") == "expense":
+        aktywne.append("Typ: Wydatki")
+    elif filtry.get("transaction_type") == "income":
+        aktywne.append("Typ: Przychody")
+
+    sortowanie = filtry.get("sortowanie", "najnowsze")
+    mapa_sortowania = {
+        "najnowsze": "Sortowanie: od najnowszych",
+        "najstarsze": "Sortowanie: od najstarszych",
+        "kwota_rosnaco": "Sortowanie: kwota rosnaco",
+        "kwota_malejaco": "Sortowanie: kwota malejaco",
+    }
+    aktywne.append(mapa_sortowania.get(sortowanie, "Sortowanie: od najnowszych"))
+
+    znaczniki = "".join(f'<span class="znacznik-filtra">{tekst}</span>' for tekst in aktywne)
+    return f'<div class="pasek-filtrow">{znaczniki}</div>'
+
+
 def zbuduj_formularz_transakcji(edytowana_transakcja: sqlite3.Row | None = None) -> str:
     czy_edycja = edytowana_transakcja is not None
     tytul = "Edytuj transakcje" if czy_edycja else "Dodaj transakcje"
@@ -143,9 +176,13 @@ def zbuduj_formularz_transakcji(edytowana_transakcja: sqlite3.Row | None = None)
         if czy_edycja
         else ""
     )
+    klasy_karty = "karta karta-formularza-transakcji"
+    if czy_edycja:
+        klasy_karty += " karta-edycji"
 
     return f"""
-    <article class="karta">
+    <article class="{klasy_karty}">
+        <p class="etykieta-kafelka">{"Tryb edycji" if czy_edycja else "Nowy wpis"}</p>
         <h2>{tytul}</h2>
         <p class="opis-sekcji">{opis}</p>
         <form method="post" action="{akcja}">
@@ -472,26 +509,6 @@ def panel_uzytkownika(
     )
     saldo = suma_przychodow - suma_wydatkow
     pozostaly_limit = limit - suma_wydatkow
-    lista = ""
-    for transakcja in transakcje:
-        lista += (
-            f"<tr><td>{bezpieczny_tekst(transakcja['transaction_date'])}</td>"
-            f"<td>{bezpieczny_tekst(transakcja['title'])}</td>"
-            f"<td>{bezpieczny_tekst(transakcja['category'])}</td>"
-            f"<td>{'Wydatek' if transakcja['transaction_type'] == 'expense' else 'Przychod'}</td>"
-            f"<td>{transakcja['amount']:.2f} zl</td>"
-            f"""<td>
-                <div class="przyciski">
-                    <a class="przycisk przycisk-jasny" href="/dashboard?edit_transaction_id={transakcja['id']}">Edytuj</a>
-                    <form method="post" action="/transaction/delete">
-                        <input type="hidden" name="transaction_id" value="{transakcja['id']}">
-                        <button class="przycisk" type="submit">Usun</button>
-                    </form>
-                </div>
-            </td></tr>"""
-        )
-    if not lista:
-        lista = '<tr><td colspan="6">Brak transakcji.</td></tr>'
 
     klasa_salda = "wartosc-neutralna"
     if saldo > 0:
@@ -517,6 +534,30 @@ def panel_uzytkownika(
     zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
     sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
     formularz_transakcji = zbuduj_formularz_transakcji(edytowana_transakcja)
+    podsumowanie_filtrow = zbuduj_podsumowanie_filtrow(filtry)
+
+    lista = ""
+    for transakcja in transakcje:
+        typ_klasa = "znacznik-typ-wydatek" if transakcja["transaction_type"] == "expense" else "znacznik-typ-przychod"
+        typ_etykieta = "Wydatek" if transakcja["transaction_type"] == "expense" else "Przychod"
+        lista += (
+            f"<tr><td>{bezpieczny_tekst(transakcja['transaction_date'])}</td>"
+            f"<td><strong>{bezpieczny_tekst(transakcja['title'])}</strong></td>"
+            f"<td><span class=\"znacznik-kategorii {klasa_kategorii(str(transakcja['category']))}\">{bezpieczny_tekst(transakcja['category'])}</span></td>"
+            f"<td><span class=\"znacznik-typu {typ_klasa}\">{typ_etykieta}</span></td>"
+            f"<td><strong>{transakcja['amount']:.2f} zl</strong></td>"
+            f"""<td>
+                <div class="grupa-akcji">
+                    <a class="przycisk przycisk-jasny przycisk-maly" href="/dashboard?edit_transaction_id={transakcja['id']}">Edytuj</a>
+                    <form method="post" action="/transaction/delete">
+                        <input type="hidden" name="transaction_id" value="{transakcja['id']}">
+                        <button class="przycisk przycisk-maly" type="submit">Usun</button>
+                    </form>
+                </div>
+            </td></tr>"""
+        )
+    if not lista:
+        lista = '<tr><td colspan="6">Brak transakcji.</td></tr>'
 
     return uklad_strony(
         "Panel uzytkownika",
@@ -607,6 +648,14 @@ def panel_uzytkownika(
         <section class="karta">
             <h2>Lista transakcji</h2>
             <p class="opis-sekcji">Ponizej widzisz wszystkie zapisane transakcje dla aktualnie zalogowanego uzytkownika.</p>
+            <div class="naglowek-listy-transakcji">
+                <div>
+                    <p class="etykieta-kafelka">Historia finansowa</p>
+                    <strong>{len(transakcje)} wpisow w aktualnym widoku</strong>
+                </div>
+                {podsumowanie_filtrow}
+            </div>
+            <div class="opakowanie-tabeli">
             <table>
                 <thead>
                     <tr>
@@ -620,6 +669,7 @@ def panel_uzytkownika(
                 </thead>
                 <tbody>{lista}</tbody>
             </table>
+            </div>
         </section>
         """,
         komunikat,

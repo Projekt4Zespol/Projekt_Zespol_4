@@ -106,6 +106,16 @@ body {
     width: min(100%, 460px);
 }
 
+.karta-formularza-transakcji {
+    position: relative;
+    border: 1px solid #d7e3ee;
+}
+
+.karta-edycji {
+    background: linear-gradient(180deg, #fffdf3 0%, #ffffff 100%);
+    border-color: #f0d57c;
+}
+
 .kafelek p {
     margin: 8px 0 0;
     font-size: 1.25rem;
@@ -297,9 +307,100 @@ select {
     color: #1d2733;
 }
 
+.przycisk-maly {
+    padding: 9px 12px;
+    font-size: 0.92rem;
+}
+
+.grupa-akcji {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.grupa-akcji form {
+    display: block;
+}
+
+.znacznik-kategorii,
+.znacznik-typu,
+.znacznik-filtra {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.znacznik-kategoria-jedzenie {
+    background: #fde7cc;
+    color: #8a4b12;
+}
+
+.znacznik-kategoria-transport {
+    background: #d9ebff;
+    color: #1d568f;
+}
+
+.znacznik-kategoria-rachunki {
+    background: #e7defe;
+    color: #5a34a3;
+}
+
+.znacznik-kategoria-rozrywka {
+    background: #dff5ea;
+    color: #196844;
+}
+
+.znacznik-kategoria-inne {
+    background: #e9eef3;
+    color: #435263;
+}
+
+.znacznik-typ-wydatek {
+    background: #fde3e3;
+    color: #993737;
+}
+
+.znacznik-typ-przychod {
+    background: #dff4e7;
+    color: #1d7a45;
+}
+
+.znacznik-filtra {
+    background: #eef5fb;
+    color: #355f89;
+}
+
+.naglowek-listy-transakcji {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.pasek-filtrow {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.opakowanie-tabeli {
+    overflow-x: auto;
+    border: 1px solid #e2eaf2;
+    border-radius: 16px;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
+    background: #ffffff;
 }
 
 th,
@@ -307,6 +408,15 @@ td {
     text-align: left;
     padding: 12px 10px;
     border-bottom: 1px solid #e4ebf2;
+    vertical-align: middle;
+}
+
+th {
+    background: #f7fbff;
+    font-size: 0.86rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #5d6b7a;
 }
 
 @media (max-width: 720px) {
@@ -320,5 +430,13 @@ td {
 
     .metryki-analityczne {
         grid-template-columns: 1fr;
+    }
+
+    .naglowek-listy-transakcji {
+        flex-direction: column;
+    }
+
+    .pasek-filtrow {
+        justify-content: flex-start;
     }
 }
