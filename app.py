@@ -71,6 +71,18 @@ def przygotuj_baze() -> None:
             )
             """
         )
+        polaczenie.execute(
+            """
+            CREATE TABLE IF NOT EXISTS budget_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                previous_limit REAL,
+                new_limit REAL NOT NULL,
+                changed_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
         polaczenie.commit()
 
 
@@ -362,6 +374,51 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
     """
 
 
+def zbuduj_sekcje_historii_budzetu(historia_budzetu: list[sqlite3.Row]) -> str:
+    if not historia_budzetu:
+        return """
+        <section class="karta">
+            <h2>Historia budzetu</h2>
+            <p class="opis-sekcji">
+                Historia zmian limitu miesiecznego pojawi sie po pierwszej aktualizacji budzetu.
+            </p>
+        </section>
+        """
+
+    wiersze = ""
+    for wpis in historia_budzetu:
+        poprzedni_limit = "Brak poprzedniej wartosci"
+        if wpis["previous_limit"] is not None:
+            poprzedni_limit = f"{float(wpis['previous_limit']):.2f} zl"
+        wiersze += (
+            f"<tr><td>{bezpieczny_tekst(wpis['changed_at'])}</td>"
+            f"<td>{poprzedni_limit}</td>"
+            f"<td><strong>{float(wpis['new_limit']):.2f} zl</strong></td></tr>"
+        )
+
+    return f"""
+    <section class="karta">
+        <h2>Historia budzetu</h2>
+        <p class="opis-sekcji">
+            Sekcja pokazuje ostatnie zapisane zmiany limitu miesiecznego. Dane beda wykorzystane rowniez
+            przy koncowych raportach i eksporcie informacji finansowych.
+        </p>
+        <div class="opakowanie-tabeli">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data zmiany</th>
+                        <th>Poprzedni limit</th>
+                        <th>Nowy limit</th>
+                    </tr>
+                </thead>
+                <tbody>{wiersze}</tbody>
+            </table>
+        </div>
+    </section>
+    """
+
+
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
     blok_komunikatu = f'<div class="komunikat">{bezpieczny_tekst(komunikat)}</div>' if komunikat else ""
     nawigacja = (
@@ -496,6 +553,7 @@ def panel_uzytkownika(
     uzytkownik: sqlite3.Row,
     budzet: sqlite3.Row | None,
     transakcje: list[sqlite3.Row],
+    historia_budzetu: list[sqlite3.Row],
     filtry: dict[str, str],
     edytowana_transakcja: sqlite3.Row | None = None,
     komunikat: str = "",
@@ -533,6 +591,7 @@ def panel_uzytkownika(
     zaznacz_kwota_rosnaco = " selected" if wybrane_sortowanie == "kwota_rosnaco" else ""
     zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
     sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
+    sekcja_historii_budzetu = zbuduj_sekcje_historii_budzetu(historia_budzetu)
     formularz_transakcji = zbuduj_formularz_transakcji(edytowana_transakcja)
     podsumowanie_filtrow = zbuduj_podsumowanie_filtrow(filtry)
 
@@ -596,6 +655,7 @@ def panel_uzytkownika(
         </section>
 
         {sekcja_analityczna}
+        {sekcja_historii_budzetu}
 
         <section class="siatka">
             <article class="karta">
@@ -706,13 +766,14 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             if not uzytkownik:
                 return
             filtry = self.pobierz_filtry_panelu()
-            budzet, transakcje = self.pobierz_dane_panelu(uzytkownik["id"], filtry)
+            budzet, transakcje, historia_budzetu = self.pobierz_dane_panelu(uzytkownik["id"], filtry)
             edytowana_transakcja = self.pobierz_transakcje_do_edycji(uzytkownik["id"])
             self.odpowiedz_html(
                 panel_uzytkownika(
                     uzytkownik,
                     budzet,
                     transakcje,
+                    historia_budzetu,
                     filtry,
                     edytowana_transakcja,
                     pobierz_komunikat(self.path),
@@ -833,11 +894,13 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
 
         teraz = datetime.now().isoformat(timespec="seconds")
         with polaczenie_z_baza() as polaczenie:
-            istnieje = polaczenie.execute(
-                "SELECT id FROM budgets WHERE user_id = ?",
+            istniejacy_budzet = polaczenie.execute(
+                "SELECT id, monthly_limit FROM budgets WHERE user_id = ?",
                 (uzytkownik["id"],),
             ).fetchone()
-            if istnieje:
+            poprzedni_limit = float(istniejacy_budzet["monthly_limit"]) if istniejacy_budzet else None
+
+            if istniejacy_budzet:
                 polaczenie.execute(
                     "UPDATE budgets SET monthly_limit = ?, updated_at = ? WHERE user_id = ?",
                     (limit, teraz, uzytkownik["id"]),
@@ -846,6 +909,15 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 polaczenie.execute(
                     "INSERT INTO budgets (user_id, monthly_limit, updated_at) VALUES (?, ?, ?)",
                     (uzytkownik["id"], limit, teraz),
+                )
+
+            if poprzedni_limit is None or poprzedni_limit != limit:
+                polaczenie.execute(
+                    """
+                    INSERT INTO budget_history (user_id, previous_limit, new_limit, changed_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (uzytkownik["id"], poprzedni_limit, limit, teraz),
                 )
             polaczenie.commit()
 
@@ -1068,7 +1140,11 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             return None
         return uzytkownik
 
-    def pobierz_dane_panelu(self, user_id: int, filtry: dict[str, str]) -> tuple[sqlite3.Row | None, list[sqlite3.Row]]:
+    def pobierz_dane_panelu(
+        self,
+        user_id: int,
+        filtry: dict[str, str],
+    ) -> tuple[sqlite3.Row | None, list[sqlite3.Row], list[sqlite3.Row]]:
         warunki = ["user_id = ?"]
         parametry: list[object] = [user_id]
 
@@ -1090,7 +1166,16 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         with polaczenie_z_baza() as polaczenie:
             budzet = polaczenie.execute("SELECT * FROM budgets WHERE user_id = ?", (user_id,)).fetchone()
             transakcje = polaczenie.execute(zapytanie_transakcji, tuple(parametry)).fetchall()
-        return budzet, transakcje
+            historia_budzetu = polaczenie.execute(
+                """
+                SELECT * FROM budget_history
+                WHERE user_id = ?
+                ORDER BY changed_at DESC, id DESC
+                LIMIT 6
+                """,
+                (user_id,),
+            ).fetchall()
+        return budzet, transakcje, historia_budzetu
 
     def obsluz_pliki_statyczne(self, sciezka: str) -> None:
         plik = KATALOG_STATYCZNY / sciezka.removeprefix("/static/")
