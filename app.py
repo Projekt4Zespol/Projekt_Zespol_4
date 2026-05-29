@@ -1,5 +1,7 @@
+import csv
 import hashlib
 import html
+import io
 import os
 import secrets
 import sqlite3
@@ -419,6 +421,23 @@ def zbuduj_sekcje_historii_budzetu(historia_budzetu: list[sqlite3.Row]) -> str:
     """
 
 
+def zbuduj_sekcje_eksportu() -> str:
+    return """
+    <section class="karta">
+        <h2>Eksport danych</h2>
+        <p class="opis-sekcji">
+            Mozesz pobrac dane do plikow CSV, aby przygotowac zewnetrzne zestawienia,
+            archiwizacje lub materialy do raportu koncowego.
+        </p>
+        <div class="przyciski">
+            <a class="przycisk" href="/export/csv?scope=transactions">Eksport transakcji CSV</a>
+            <a class="przycisk przycisk-jasny" href="/export/csv?scope=budget_history">Eksport historii budzetu CSV</a>
+            <a class="przycisk przycisk-jasny" href="/export/csv?scope=summary">Eksport podsumowania CSV</a>
+        </div>
+    </section>
+    """
+
+
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
     blok_komunikatu = f'<div class="komunikat">{bezpieczny_tekst(komunikat)}</div>' if komunikat else ""
     nawigacja = (
@@ -592,6 +611,7 @@ def panel_uzytkownika(
     zaznacz_kwota_malejaco = " selected" if wybrane_sortowanie == "kwota_malejaco" else ""
     sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
     sekcja_historii_budzetu = zbuduj_sekcje_historii_budzetu(historia_budzetu)
+    sekcja_eksportu = zbuduj_sekcje_eksportu()
     formularz_transakcji = zbuduj_formularz_transakcji(edytowana_transakcja)
     podsumowanie_filtrow = zbuduj_podsumowanie_filtrow(filtry)
 
@@ -656,6 +676,7 @@ def panel_uzytkownika(
 
         {sekcja_analityczna}
         {sekcja_historii_budzetu}
+        {sekcja_eksportu}
 
         <section class="siatka">
             <article class="karta">
@@ -779,6 +800,9 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                     pobierz_komunikat(self.path),
                 )
             )
+            return
+        if sciezka == "/export/csv":
+            self.obsluz_eksport_csv()
             return
         self.odpowiedz_html(
             uklad_strony("Nie znaleziono", "<section class='karta'><p>Nie znaleziono strony.</p></section>"),
@@ -1116,6 +1140,124 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 (int(identyfikator), user_id),
             ).fetchone()
 
+    def obsluz_eksport_csv(self) -> None:
+        uzytkownik = self.wymagaj_uzytkownika()
+        if not uzytkownik:
+            return
+
+        parametry = self.pobierz_parametry_zapytania()
+        zakres = parametry.get("scope", "transactions").strip()
+        dozwolone_zakresy = {"transactions", "budget_history", "summary"}
+        if zakres not in dozwolone_zakresy:
+            self.przekieruj(
+                zbuduj_lacze_z_komunikatem(
+                    "/dashboard",
+                    "Wybrano niepoprawny zakres eksportu.",
+                )
+            )
+            return
+
+        if zakres == "transactions":
+            dane_csv = self.zbuduj_csv_transakcji(int(uzytkownik["id"]))
+            nazwa_pliku = "budgetbuddy-transakcje.csv"
+        elif zakres == "budget_history":
+            dane_csv = self.zbuduj_csv_historii_budzetu(int(uzytkownik["id"]))
+            nazwa_pliku = "budgetbuddy-historia-budzetu.csv"
+        else:
+            dane_csv = self.zbuduj_csv_podsumowania(int(uzytkownik["id"]))
+            nazwa_pliku = "budgetbuddy-podsumowanie.csv"
+
+        self.odpowiedz_csv(dane_csv, nazwa_pliku)
+
+    def zbuduj_csv_transakcji(self, user_id: int) -> str:
+        with polaczenie_z_baza() as polaczenie:
+            transakcje = polaczenie.execute(
+                """
+                SELECT transaction_date, title, category, transaction_type, amount, created_at
+                FROM transactions
+                WHERE user_id = ?
+                ORDER BY transaction_date DESC, id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        bufor = io.StringIO()
+        writer = csv.writer(bufor)
+        writer.writerow(["data_transakcji", "nazwa", "kategoria", "typ", "kwota", "utworzono"])
+        for transakcja in transakcje:
+            writer.writerow(
+                [
+                    transakcja["transaction_date"],
+                    transakcja["title"],
+                    transakcja["category"],
+                    transakcja["transaction_type"],
+                    f"{float(transakcja['amount']):.2f}",
+                    transakcja["created_at"],
+                ]
+            )
+        return bufor.getvalue()
+
+    def zbuduj_csv_historii_budzetu(self, user_id: int) -> str:
+        with polaczenie_z_baza() as polaczenie:
+            historia = polaczenie.execute(
+                """
+                SELECT previous_limit, new_limit, changed_at
+                FROM budget_history
+                WHERE user_id = ?
+                ORDER BY changed_at DESC, id DESC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        bufor = io.StringIO()
+        writer = csv.writer(bufor)
+        writer.writerow(["poprzedni_limit", "nowy_limit", "data_zmiany"])
+        for wpis in historia:
+            writer.writerow(
+                [
+                    "" if wpis["previous_limit"] is None else f"{float(wpis['previous_limit']):.2f}",
+                    f"{float(wpis['new_limit']):.2f}",
+                    wpis["changed_at"],
+                ]
+            )
+        return bufor.getvalue()
+
+    def zbuduj_csv_podsumowania(self, user_id: int) -> str:
+        with polaczenie_z_baza() as polaczenie:
+            budzet = polaczenie.execute(
+                "SELECT monthly_limit, updated_at FROM budgets WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            transakcje = polaczenie.execute(
+                """
+                SELECT amount, transaction_type
+                FROM transactions
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchall()
+
+        limit = float(budzet["monthly_limit"]) if budzet else 0.0
+        suma_wydatkow = sum(
+            float(transakcja["amount"]) for transakcja in transakcje if transakcja["transaction_type"] == "expense"
+        )
+        suma_przychodow = sum(
+            float(transakcja["amount"]) for transakcja in transakcje if transakcja["transaction_type"] == "income"
+        )
+        saldo = suma_przychodow - suma_wydatkow
+        pozostaly_limit = limit - suma_wydatkow
+
+        bufor = io.StringIO()
+        writer = csv.writer(bufor)
+        writer.writerow(["metryka", "wartosc"])
+        writer.writerow(["budzet_miesieczny", f"{limit:.2f}"])
+        writer.writerow(["suma_wydatkow", f"{suma_wydatkow:.2f}"])
+        writer.writerow(["suma_przychodow", f"{suma_przychodow:.2f}"])
+        writer.writerow(["saldo", f"{saldo:.2f}"])
+        writer.writerow(["pozostaly_limit", f"{pozostaly_limit:.2f}"])
+        writer.writerow(["ostatnia_aktualizacja_budzetu", budzet["updated_at"] if budzet else "brak"])
+        return bufor.getvalue()
+
     def pobierz_id_sesji(self) -> str | None:
         cookie = self.headers.get("Cookie")
         if not cookie:
@@ -1195,6 +1337,16 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         self.send_response(status)
         self.dodaj_naglowki_bezpieczenstwa(dla_html=True)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(dane)))
+        self.end_headers()
+        self.wfile.write(dane)
+
+    def odpowiedz_csv(self, tresc: str, nazwa_pliku: str, status: int = 200) -> None:
+        dane = tresc.encode("utf-8-sig")
+        self.send_response(status)
+        self.dodaj_naglowki_bezpieczenstwa()
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{nazwa_pliku}"')
         self.send_header("Content-Length", str(len(dane)))
         self.end_headers()
         self.wfile.write(dane)
