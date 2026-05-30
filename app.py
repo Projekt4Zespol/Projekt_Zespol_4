@@ -2,9 +2,12 @@ import csv
 import hashlib
 import html
 import io
+import math
 import os
 import secrets
 import sqlite3
+import subprocess
+import time
 import urllib.parse
 from datetime import datetime
 from http import cookies
@@ -33,6 +36,45 @@ def polaczenie_z_baza() -> sqlite3.Connection:
     polaczenie = sqlite3.connect(SCIEZKA_BAZY)
     polaczenie.row_factory = sqlite3.Row
     return polaczenie
+
+
+def znajdz_pid_nasluchujace_na_porcie(port: int) -> list[int]:
+    if os.name != "nt":
+        return []
+
+    wynik = subprocess.run(
+        ["netstat", "-ano", "-p", "tcp"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    pidy: set[int] = set()
+    for linia in wynik.stdout.splitlines():
+        fragmenty = linia.split()
+        if len(fragmenty) < 5 or fragmenty[0] != "TCP":
+            continue
+        lokalny_adres = fragmenty[1]
+        stan = fragmenty[3].upper()
+        pid = fragmenty[4]
+        if stan != "LISTENING":
+            continue
+        if not lokalny_adres.endswith(f":{port}") or not pid.isdigit():
+            continue
+        pidy.add(int(pid))
+    return sorted(pidy)
+
+
+def zwolnij_port(port: int) -> None:
+    for pid in znajdz_pid_nasluchujace_na_porcie(port):
+        if pid == os.getpid():
+            continue
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    time.sleep(0.3)
 
 
 def przygotuj_baze() -> None:
@@ -186,7 +228,7 @@ def zbuduj_formularz_transakcji(edytowana_transakcja: sqlite3.Row | None = None)
         else ""
     )
     link_anuluj = (
-        '<a class="przycisk przycisk-jasny" href="/dashboard">Anuluj edycje</a>'
+        '<a class="przycisk przycisk-jasny" href="/dashboard/transactions">Anuluj edycje</a>'
         if czy_edycja
         else ""
     )
@@ -230,6 +272,55 @@ def zbuduj_formularz_transakcji(edytowana_transakcja: sqlite3.Row | None = None)
     """
 
 
+def zbuduj_wykres_kolowy_kategorii(wydatki_kategorii: dict[str, float]) -> str:
+    laczna_kwota = sum(wydatki_kategorii.values())
+    if laczna_kwota <= 0:
+        return """
+        <div class="brak-danych-analitycznych">
+            <p>Dodaj wydatki, aby zobaczyc wykres udzialu kategorii w budzecie.</p>
+        </div>
+        """
+
+    kolory = {
+        "Jedzenie": "#4f78a8",
+        "Transport": "#c54f48",
+        "Rachunki": "#8eaf4f",
+        "Rozrywka": "#7662af",
+        "Inne": "#df8b39",
+    }
+    segmenty: list[str] = []
+    legenda = ""
+    start = 0.0
+
+    for kategoria, kwota in sorted(wydatki_kategorii.items(), key=lambda element: element[1], reverse=True):
+        udzial = (kwota / laczna_kwota) * 100
+        koniec = start + udzial
+        kolor = kolory.get(kategoria, "#8aa2c8")
+        segmenty.append(f"{kolor} {start:.2f}% {koniec:.2f}%")
+        legenda += f"""
+        <li>
+            <span class="kolor-legendy" style="background:{kolor};"></span>
+            <span>{bezpieczny_tekst(kategoria)}</span>
+            <strong>{udzial:.1f}%</strong>
+        </li>
+        """
+        start = koniec
+
+    styl_tla = ", ".join(segmenty)
+    return f"""
+    <div class="wykres-kolowy-uklad">
+        <div class="wykres-kolowy-blok">
+            <div class="wykres-kolowy" style="background: conic-gradient({styl_tla});"></div>
+            <div class="wykres-kolowy-suma">
+                <span>Wydatki</span>
+                <strong>{laczna_kwota:.2f} zl</strong>
+            </div>
+        </div>
+        <ul class="legenda-wykresu">{legenda}</ul>
+    </div>
+    """
+
+
 def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodow: float, transakcje: list[sqlite3.Row]) -> str:
     wydatki_kategorii: dict[str, float] = {}
     liczba_wydatkow = 0
@@ -255,31 +346,10 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
         pasek_klasa = "postep-dobry"
 
     laczna_kwota_wydatkow = sum(wydatki_kategorii.values())
-    wiersze_kategorii = ""
     dominujaca_kategoria = "Brak danych"
     if laczna_kwota_wydatkow > 0:
         dominujaca_kategoria = max(wydatki_kategorii.items(), key=lambda element: element[1])[0]
-        for kategoria, kwota in sorted(wydatki_kategorii.items(), key=lambda element: element[1], reverse=True):
-            szerokosc = max((kwota / laczna_kwota_wydatkow) * 100, 8)
-            udzial = (kwota / laczna_kwota_wydatkow) * 100
-            wiersze_kategorii += f"""
-            <div class="wiersz-wykresu">
-                <div class="naglowek-wykresu">
-                    <span>{kategoria}</span>
-                    <strong>{kwota:.2f} zl</strong>
-                </div>
-                <div class="tor-wykresu">
-                    <div class="slupek-wykresu" style="width: {szerokosc:.1f}%"></div>
-                </div>
-                <p class="opis-pola">Udzial w wydatkach: {udzial:.1f}%</p>
-            </div>
-            """
-    else:
-        wiersze_kategorii = """
-        <div class="brak-danych-analitycznych">
-            <p>Dodaj wydatki, aby zobaczyc zestawienie kategorii i bardziej szczegolowa analityke.</p>
-        </div>
-        """
+    wykres_kolowy = zbuduj_wykres_kolowy_kategorii(wydatki_kategorii)
 
     komunikat_budzetowy = "Budzet nie zostal jeszcze ustawiony."
     if limit > 0:
@@ -323,13 +393,13 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
             <div class="naglowek-karty-analitycznej">
                 <div>
                     <p class="etykieta-kafelka">Wykres</p>
-                    <h2>Wydatki wedlug kategorii</h2>
+                    <h2>Udzial kategorii w wydatkach</h2>
                 </div>
             </div>
             <p class="opis-sekcji">
-                Sekcja pokazuje, ktore obszary generuja najwieksze koszty i gdzie budzet jest obciazany najmocniej.
+                Wykres pokazuje procentowy udzial kategorii w calosci wydatkow i lepiej eksponuje strukture kosztow.
             </p>
-            {wiersze_kategorii}
+            {wykres_kolowy}
         </article>
 
         <article class="karta karta-analityczna">
@@ -370,6 +440,57 @@ def zbuduj_sekcje_analityczna(limit: float, suma_wydatkow: float, suma_przychodo
                     <span>Liczba przychodow</span>
                     <strong>{liczba_przychodow}</strong>
                 </div>
+            </div>
+        </article>
+    </section>
+    """
+
+
+def zbuduj_zakladki_panelu(widok: str) -> str:
+    definicje = [
+        ("overview", "Przeglad", "/dashboard"),
+        ("budget", "Budzet", "/dashboard/budget"),
+        ("transactions", "Transakcje", "/dashboard/transactions"),
+        ("reports", "Raporty", "/dashboard/reports"),
+    ]
+    lacza = []
+    for identyfikator, etykieta, adres in definicje:
+        klasa = "zakladka-panelu"
+        if widok == identyfikator:
+            klasa += " zakladka-aktywna"
+        lacza.append(f'<a class="{klasa}" href="{adres}">{etykieta}</a>')
+    return f'<nav class="zakladki-panelu">{"".join(lacza)}</nav>'
+
+
+def zbuduj_sekcje_przegladu(limit: float, pozostaly_limit: float, suma_wydatkow: float, raport_miesieczny: list[sqlite3.Row]) -> str:
+    ostatni_okres = raport_miesieczny[0]["okres"] if raport_miesieczny else "Brak danych"
+    komunikat_limitu = "Budzet nie zostal jeszcze ustawiony."
+    if limit > 0:
+        wykorzystanie = (suma_wydatkow / limit) * 100 if limit else 0
+        komunikat_limitu = f"Pozostaly limit wynosi {pozostaly_limit:.2f} zl, a wykorzystanie budzetu to {wykorzystanie:.1f}%."
+
+    return f"""
+    <section class="siatka">
+        <article class="karta karta-przegladu">
+            <p class="etykieta-kafelka">Centrum dowodzenia</p>
+            <h2>Najwazniejsze informacje w jednym miejscu</h2>
+            <p class="opis-sekcji">
+                {komunikat_limitu}
+            </p>
+            <div class="przyciski">
+                <a class="przycisk" href="/dashboard/transactions">Przejdz do transakcji</a>
+                <a class="przycisk przycisk-jasny" href="/dashboard/reports">Zobacz raporty</a>
+            </div>
+        </article>
+        <article class="karta karta-przegladu">
+            <p class="etykieta-kafelka">Podsumowanie</p>
+            <h2>Ostatni okres raportowy</h2>
+            <p class="opis-sekcji">
+                Najnowszy dostepny raport obejmuje okres <strong>{bezpieczny_tekst(ostatni_okres)}</strong>.
+                W tej sekcji mozesz szybko przejsc do zestawien miesiecznych, rocznych oraz eksportu danych.
+            </p>
+            <div class="przyciski">
+                <a class="przycisk przycisk-jasny" href="/dashboard/budget">Historia budzetu</a>
             </div>
         </article>
     </section>
@@ -438,6 +559,77 @@ def zbuduj_sekcje_eksportu() -> str:
     """
 
 
+def zbuduj_sekcje_raportow_okresowych(
+    raport_miesieczny: list[sqlite3.Row],
+    raport_roczny: list[sqlite3.Row],
+) -> str:
+    def wiersze_raportu(wiersze: list[sqlite3.Row], etykieta_okresu: str) -> str:
+        if not wiersze:
+            return f'<tr><td colspan="5">Brak danych do raportu {etykieta_okresu.lower()}.</td></tr>'
+
+        wynik = ""
+        for wiersz in wiersze:
+            przychody = float(wiersz["przychody"] or 0.0)
+            wydatki = float(wiersz["wydatki"] or 0.0)
+            saldo = przychody - wydatki
+            wynik += (
+                f"<tr><td>{bezpieczny_tekst(wiersz['okres'])}</td>"
+                f"<td>{przychody:.2f} zl</td>"
+                f"<td>{wydatki:.2f} zl</td>"
+                f"<td><strong>{saldo:.2f} zl</strong></td>"
+                f"<td>{int(wiersz['liczba_operacji'] or 0)}</td></tr>"
+            )
+        return wynik
+
+    return f"""
+    <section class="siatka siatka-raportow">
+        <article class="karta">
+            <p class="etykieta-kafelka">Raporty okresowe</p>
+            <h2>Raport miesieczny</h2>
+            <p class="opis-sekcji">
+                Zestawienie pokazuje ostatnie miesiace z podzialem na przychody, wydatki, saldo oraz liczbe operacji.
+            </p>
+            <div class="opakowanie-tabeli">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Miesiac</th>
+                            <th>Przychody</th>
+                            <th>Wydatki</th>
+                            <th>Saldo</th>
+                            <th>Liczba operacji</th>
+                        </tr>
+                    </thead>
+                    <tbody>{wiersze_raportu(raport_miesieczny, "miesiecznego")}</tbody>
+                </table>
+            </div>
+        </article>
+
+        <article class="karta">
+            <p class="etykieta-kafelka">Raporty okresowe</p>
+            <h2>Raport roczny</h2>
+            <p class="opis-sekcji">
+                Zestawienie roczne pokazuje caly bilans finansowy w skali roku i pomaga szybko ocenic trend projektu.
+            </p>
+            <div class="opakowanie-tabeli">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rok</th>
+                            <th>Przychody</th>
+                            <th>Wydatki</th>
+                            <th>Saldo</th>
+                            <th>Liczba operacji</th>
+                        </tr>
+                    </thead>
+                    <tbody>{wiersze_raportu(raport_roczny, "rocznego")}</tbody>
+                </table>
+            </div>
+        </article>
+    </section>
+    """
+
+
 def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite3.Row | None = None) -> str:
     blok_komunikatu = f'<div class="komunikat">{bezpieczny_tekst(komunikat)}</div>' if komunikat else ""
     nawigacja = (
@@ -467,9 +659,12 @@ def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite
 </head>
 <body>
     <header class="naglowek">
-        <div>
-            <p class="etykieta">BudgetBuddy</p>
-            <h1>{bezpieczny_tekst(tytul)}</h1>
+        <div class="branding">
+            <div class="logo-znak">BB</div>
+            <div>
+                <p class="etykieta">BudgetBuddy</p>
+                <h1>{bezpieczny_tekst(tytul)}</h1>
+            </div>
         </div>
         {nawigacja}
     </header>
@@ -484,37 +679,53 @@ def uklad_strony(tytul: str, tresc: str, komunikat: str = "", uzytkownik: sqlite
 
 def strona_glowna() -> str:
     return uklad_strony(
-        "Prosty system kontroli budzetu",
+        "Finanse pod kontrola",
         """
         <section class="siatka">
-            <article class="karta">
-                <h2>Aktualny etap projektu</h2>
-                <p>
-                    Aplikacja po reorganizacji projektu odzyskuje podstawowe funkcje:
-                    rejestracje, logowanie, ustawianie budzetu i dodawanie transakcji.
+            <article class="karta karta-powitalna">
+                <p class="etykieta-kafelka">BudgetBuddy</p>
+                <h2>Osobisty panel budzetu, raportow i analityki</h2>
+                <p class="opis-sekcji">
+                    Aplikacja pomaga kontrolowac wydatki, pilnowac limitu miesiecznego,
+                    analizowac finanse i eksportowac dane do dalszej pracy.
                 </p>
                 <div class="przyciski">
                     <a class="przycisk" href="/register">Zaloz konto</a>
                     <a class="przycisk przycisk-jasny" href="/login">Zaloguj sie</a>
                 </div>
             </article>
-            <article class="karta">
-                <h2>Zakres obecnej wersji</h2>
+            <article class="karta karta-powitalna">
+                <p class="etykieta-kafelka">Najwazniejsze funkcje</p>
+                <h2>Gotowa wersja do codziennego uzycia</h2>
                 <ul>
                     <li>Rejestracja uzytkownika</li>
                     <li>Logowanie i wylogowanie</li>
-                    <li>Ustawianie budzetu miesiecznego</li>
-                    <li>Dodawanie transakcji</li>
-                    <li>Prosty panel uzytkownika</li>
+                    <li>Historia budzetu i panel budzetowy</li>
+                    <li>Dodawanie, edycja i usuwanie transakcji</li>
+                    <li>Raporty miesieczne i roczne</li>
+                    <li>Eksport danych do CSV</li>
                 </ul>
             </article>
         </section>
-        <section class="karta karta-informacyjna">
-            <h2>Co mozesz zrobic w tej wersji</h2>
-            <p>
-                Uzytkownik moze zalozyc konto, zalogowac sie, ustawic limit miesieczny oraz dodawac
-                podstawowe transakcje. W kolejnych etapach interfejs bedzie dalej rozszerzany.
-            </p>
+        <section class="siatka">
+            <article class="karta">
+                <h2>Planowanie budzetu</h2>
+                <p class="opis-sekcji">
+                    Ustawiaj limity miesieczne i sledz zmiany budzetu w historii konta.
+                </p>
+            </article>
+            <article class="karta">
+                <h2>Analityka i raporty</h2>
+                <p class="opis-sekcji">
+                    Oceniaj strukture wydatkow, przegladaj raporty okresowe i przygotowuj zestawienia na prezentacje.
+                </p>
+            </article>
+            <article class="karta">
+                <h2>Eksport i archiwizacja</h2>
+                <p class="opis-sekcji">
+                    Pobieraj dane do CSV, aby tworzyc wlasne analizy lub zachowac kopie historii finansowej.
+                </p>
+            </article>
         </section>
         """,
     )
@@ -573,7 +784,10 @@ def panel_uzytkownika(
     budzet: sqlite3.Row | None,
     transakcje: list[sqlite3.Row],
     historia_budzetu: list[sqlite3.Row],
+    raport_miesieczny: list[sqlite3.Row],
+    raport_roczny: list[sqlite3.Row],
     filtry: dict[str, str],
+    widok: str,
     edytowana_transakcja: sqlite3.Row | None = None,
     komunikat: str = "",
 ) -> str:
@@ -612,6 +826,9 @@ def panel_uzytkownika(
     sekcja_analityczna = zbuduj_sekcje_analityczna(limit, suma_wydatkow, suma_przychodow, transakcje)
     sekcja_historii_budzetu = zbuduj_sekcje_historii_budzetu(historia_budzetu)
     sekcja_eksportu = zbuduj_sekcje_eksportu()
+    sekcja_raportow = zbuduj_sekcje_raportow_okresowych(raport_miesieczny, raport_roczny)
+    sekcja_przegladu = zbuduj_sekcje_przegladu(limit, pozostaly_limit, suma_wydatkow, raport_miesieczny)
+    zakladki_panelu = zbuduj_zakladki_panelu(widok)
     formularz_transakcji = zbuduj_formularz_transakcji(edytowana_transakcja)
     podsumowanie_filtrow = zbuduj_podsumowanie_filtrow(filtry)
 
@@ -627,7 +844,7 @@ def panel_uzytkownika(
             f"<td><strong>{transakcja['amount']:.2f} zl</strong></td>"
             f"""<td>
                 <div class="grupa-akcji">
-                    <a class="przycisk przycisk-jasny przycisk-maly" href="/dashboard?edit_transaction_id={transakcja['id']}">Edytuj</a>
+                    <a class="przycisk przycisk-jasny przycisk-maly" href="/dashboard/transactions?edit_transaction_id={transakcja['id']}">Edytuj</a>
                     <form method="post" action="/transaction/delete">
                         <input type="hidden" name="transaction_id" value="{transakcja['id']}">
                         <button class="przycisk przycisk-maly" type="submit">Usun</button>
@@ -638,9 +855,102 @@ def panel_uzytkownika(
     if not lista:
         lista = '<tr><td colspan="6">Brak transakcji.</td></tr>'
 
+    sekcja_budzetu = f"""
+        {sekcja_historii_budzetu}
+        <section class="karta">
+            <h2>Ustaw budzet</h2>
+            <p class="opis-sekcji">Tutaj ustawiasz miesieczny limit wydatkow dla swojego konta.</p>
+            <form method="post" action="/budget">
+                <label>Limit miesieczny
+                    <input type="number" step="0.01" min="0" name="monthly_limit" value="{limit:.2f}" required>
+                </label>
+                <button class="przycisk" type="submit">Zapisz budzet</button>
+            </form>
+        </section>
+    """
+
+    sekcja_transakcji = f"""
+        <section class="siatka">
+            {formularz_transakcji}
+            <article class="karta">
+                <h2>Filtrowanie i sortowanie transakcji</h2>
+                <p class="opis-sekcji">
+                    Tutaj mozesz zawezic liste transakcji do wybranej kategorii, typu oraz sposobu sortowania.
+                </p>
+                <form method="get" action="/dashboard/transactions">
+                    <label>Kategoria
+                        <select name="category">
+                            {zbuduj_opcje_kategorii(wybrana_kategoria)}
+                        </select>
+                    </label>
+                    <label>Typ transakcji
+                        <select name="transaction_type">
+                            <option value=""{zaznacz_wszystkie_typy}>Wszystkie typy</option>
+                            <option value="expense"{zaznacz_wydatki}>Wydatki</option>
+                            <option value="income"{zaznacz_przychody}>Przychody</option>
+                        </select>
+                    </label>
+                    <label>Sortowanie
+                        <select name="sortowanie">
+                            <option value="najnowsze"{zaznacz_najnowsze}>Od najnowszych</option>
+                            <option value="najstarsze"{zaznacz_najstarsze}>Od najstarszych</option>
+                            <option value="kwota_rosnaco"{zaznacz_kwota_rosnaco}>Kwota rosnaco</option>
+                            <option value="kwota_malejaco"{zaznacz_kwota_malejaco}>Kwota malejaco</option>
+                        </select>
+                    </label>
+                    <div class="przyciski">
+                        <button class="przycisk" type="submit">Zastosuj filtry</button>
+                        <a class="przycisk przycisk-jasny" href="/dashboard/transactions">Wyczysc filtry</a>
+                    </div>
+                </form>
+            </article>
+        </section>
+
+        <section class="karta">
+            <h2>Lista transakcji</h2>
+            <p class="opis-sekcji">Ponizej widzisz wszystkie zapisane transakcje dla aktualnie zalogowanego uzytkownika.</p>
+            <div class="naglowek-listy-transakcji">
+                <div>
+                    <p class="etykieta-kafelka">Historia finansowa</p>
+                    <strong>{len(transakcje)} wpisow w aktualnym widoku</strong>
+                </div>
+                {podsumowanie_filtrow}
+            </div>
+            <div class="opakowanie-tabeli">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Nazwa</th>
+                        <th>Kategoria</th>
+                        <th>Typ</th>
+                        <th>Kwota</th>
+                        <th>Akcje</th>
+                    </tr>
+                </thead>
+                <tbody>{lista}</tbody>
+            </table>
+            </div>
+        </section>
+    """
+
+    sekcja_raportowa = f"""
+        {sekcja_analityczna}
+        {sekcja_raportow}
+        {sekcja_eksportu}
+    """
+
+    widoki = {
+        "overview": sekcja_przegladu + sekcja_analityczna,
+        "budget": sekcja_budzetu,
+        "transactions": sekcja_transakcji,
+        "reports": sekcja_raportowa,
+    }
+
     return uklad_strony(
         "Panel uzytkownika",
         f"""
+        {zakladki_panelu}
         <section class="kafelki">
             <article class="karta kafelek">
                 <p class="etykieta-kafelka">Budzet</p>
@@ -674,84 +984,7 @@ def panel_uzytkownika(
             </article>
         </section>
 
-        {sekcja_analityczna}
-        {sekcja_historii_budzetu}
-        {sekcja_eksportu}
-
-        <section class="siatka">
-            <article class="karta">
-                <h2>Ustaw budzet</h2>
-                <p class="opis-sekcji">Tutaj ustawiasz miesieczny limit wydatkow dla swojego konta.</p>
-                <form method="post" action="/budget">
-                    <label>Limit miesieczny
-                        <input type="number" step="0.01" min="0" name="monthly_limit" value="{limit:.2f}" required>
-                    </label>
-                    <button class="przycisk" type="submit">Zapisz budzet</button>
-                </form>
-            </article>
-
-            {formularz_transakcji}
-        </section>
-
-        <section class="karta">
-            <h2>Filtrowanie i sortowanie transakcji</h2>
-            <p class="opis-sekcji">
-                Tutaj mozesz zawezic liste transakcji do wybranej kategorii, typu oraz sposobu sortowania.
-            </p>
-            <form method="get" action="/dashboard">
-                <label>Kategoria
-                    <select name="category">
-                        {zbuduj_opcje_kategorii(wybrana_kategoria)}
-                    </select>
-                </label>
-                <label>Typ transakcji
-                    <select name="transaction_type">
-                        <option value=""{zaznacz_wszystkie_typy}>Wszystkie typy</option>
-                        <option value="expense"{zaznacz_wydatki}>Wydatki</option>
-                        <option value="income"{zaznacz_przychody}>Przychody</option>
-                    </select>
-                </label>
-                <label>Sortowanie
-                    <select name="sortowanie">
-                        <option value="najnowsze"{zaznacz_najnowsze}>Od najnowszych</option>
-                        <option value="najstarsze"{zaznacz_najstarsze}>Od najstarszych</option>
-                        <option value="kwota_rosnaco"{zaznacz_kwota_rosnaco}>Kwota rosnaco</option>
-                        <option value="kwota_malejaco"{zaznacz_kwota_malejaco}>Kwota malejaco</option>
-                    </select>
-                </label>
-                <div class="przyciski">
-                    <button class="przycisk" type="submit">Zastosuj filtry</button>
-                    <a class="przycisk przycisk-jasny" href="/dashboard">Wyczysc filtry</a>
-                </div>
-            </form>
-        </section>
-
-        <section class="karta">
-            <h2>Lista transakcji</h2>
-            <p class="opis-sekcji">Ponizej widzisz wszystkie zapisane transakcje dla aktualnie zalogowanego uzytkownika.</p>
-            <div class="naglowek-listy-transakcji">
-                <div>
-                    <p class="etykieta-kafelka">Historia finansowa</p>
-                    <strong>{len(transakcje)} wpisow w aktualnym widoku</strong>
-                </div>
-                {podsumowanie_filtrow}
-            </div>
-            <div class="opakowanie-tabeli">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Nazwa</th>
-                        <th>Kategoria</th>
-                        <th>Typ</th>
-                        <th>Kwota</th>
-                        <th>Akcje</th>
-                    </tr>
-                </thead>
-                <tbody>{lista}</tbody>
-            </table>
-            </div>
-        </section>
+        {widoki.get(widok, sekcja_przegladu + sekcja_analityczna)}
         """,
         komunikat,
         uzytkownik,
@@ -761,6 +994,12 @@ def panel_uzytkownika(
 class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         sciezka = urllib.parse.urlparse(self.path).path
+        widoki_panelu = {
+            "/dashboard": "overview",
+            "/dashboard/budget": "budget",
+            "/dashboard/transactions": "transactions",
+            "/dashboard/reports": "reports",
+        }
         if sciezka.startswith("/static/"):
             self.obsluz_pliki_statyczne(sciezka)
             return
@@ -782,12 +1021,15 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 wyczysc_cookie=True,
             )
             return
-        if sciezka == "/dashboard":
+        if sciezka in widoki_panelu:
             uzytkownik = self.wymagaj_uzytkownika()
             if not uzytkownik:
                 return
             filtry = self.pobierz_filtry_panelu()
-            budzet, transakcje, historia_budzetu = self.pobierz_dane_panelu(uzytkownik["id"], filtry)
+            budzet, transakcje, historia_budzetu, raport_miesieczny, raport_roczny = self.pobierz_dane_panelu(
+                uzytkownik["id"],
+                filtry,
+            )
             edytowana_transakcja = self.pobierz_transakcje_do_edycji(uzytkownik["id"])
             self.odpowiedz_html(
                 panel_uzytkownika(
@@ -795,7 +1037,10 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                     budzet,
                     transakcje,
                     historia_budzetu,
+                    raport_miesieczny,
+                    raport_roczny,
                     filtry,
+                    widoki_panelu[sciezka],
                     edytowana_transakcja,
                     pobierz_komunikat(self.path),
                 )
@@ -910,7 +1155,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         except ValueError:
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/budget",
                     "Budzet musi byc liczba dodatnia lub rowna zero.",
                 )
             )
@@ -945,7 +1190,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 )
             polaczenie.commit()
 
-        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Budzet zapisany."))
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/budget", "Budzet zapisany."))
 
     def obsluz_transakcje(self) -> None:
         uzytkownik = self.wymagaj_uzytkownika()
@@ -954,7 +1199,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         dane = self.pobierz_dane_formularza()
         dane_transakcji, blad = self.przygotuj_dane_transakcji(dane)
         if blad:
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", blad))
+            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/transactions", blad))
             return
 
         with polaczenie_z_baza() as polaczenie:
@@ -976,7 +1221,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
             )
             polaczenie.commit()
 
-        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala dodana."))
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/transactions", "Transakcja zostala dodana."))
 
     def obsluz_aktualizacje_transakcji(self) -> None:
         uzytkownik = self.wymagaj_uzytkownika()
@@ -988,7 +1233,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if not identyfikator.isdigit():
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/transactions",
                     "Nie wybrano poprawnej transakcji do edycji.",
                 )
             )
@@ -996,7 +1241,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
 
         dane_transakcji, blad = self.przygotuj_dane_transakcji(dane)
         if blad:
-            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", blad))
+            self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/transactions", blad))
             return
 
         with polaczenie_z_baza() as polaczenie:
@@ -1021,13 +1266,13 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if wynik.rowcount == 0:
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/transactions",
                     "Nie znaleziono transakcji do edycji.",
                 )
             )
             return
 
-        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala zaktualizowana."))
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/transactions", "Transakcja zostala zaktualizowana."))
 
     def obsluz_usuwanie_transakcji(self) -> None:
         uzytkownik = self.wymagaj_uzytkownika()
@@ -1040,7 +1285,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if not identyfikator.isdigit():
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/transactions",
                     "Nie wybrano poprawnej transakcji do usuniecia.",
                 )
             )
@@ -1056,13 +1301,13 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if wynik.rowcount == 0:
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/transactions",
                     "Nie znaleziono transakcji do usuniecia.",
                 )
             )
             return
 
-        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard", "Transakcja zostala usunieta."))
+        self.przekieruj(zbuduj_lacze_z_komunikatem("/dashboard/transactions", "Transakcja zostala usunieta."))
 
     def pobierz_dane_formularza(self) -> dict[str, str]:
         dlugosc = int(self.headers.get("Content-Length", "0"))
@@ -1151,7 +1396,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         if zakres not in dozwolone_zakresy:
             self.przekieruj(
                 zbuduj_lacze_z_komunikatem(
-                    "/dashboard",
+                    "/dashboard/reports",
                     "Wybrano niepoprawny zakres eksportu.",
                 )
             )
@@ -1286,7 +1531,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
         self,
         user_id: int,
         filtry: dict[str, str],
-    ) -> tuple[sqlite3.Row | None, list[sqlite3.Row], list[sqlite3.Row]]:
+    ) -> tuple[sqlite3.Row | None, list[sqlite3.Row], list[sqlite3.Row], list[sqlite3.Row], list[sqlite3.Row]]:
         warunki = ["user_id = ?"]
         parametry: list[object] = [user_id]
 
@@ -1317,7 +1562,37 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
                 """,
                 (user_id,),
             ).fetchall()
-        return budzet, transakcje, historia_budzetu
+            raport_miesieczny = polaczenie.execute(
+                """
+                SELECT
+                    substr(transaction_date, 1, 7) AS okres,
+                    SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END) AS przychody,
+                    SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) AS wydatki,
+                    COUNT(*) AS liczba_operacji
+                FROM transactions
+                WHERE user_id = ?
+                GROUP BY substr(transaction_date, 1, 7)
+                ORDER BY okres DESC
+                LIMIT 6
+                """,
+                (user_id,),
+            ).fetchall()
+            raport_roczny = polaczenie.execute(
+                """
+                SELECT
+                    substr(transaction_date, 1, 4) AS okres,
+                    SUM(CASE WHEN transaction_type = 'income' THEN amount ELSE 0 END) AS przychody,
+                    SUM(CASE WHEN transaction_type = 'expense' THEN amount ELSE 0 END) AS wydatki,
+                    COUNT(*) AS liczba_operacji
+                FROM transactions
+                WHERE user_id = ?
+                GROUP BY substr(transaction_date, 1, 4)
+                ORDER BY okres DESC
+                LIMIT 5
+                """,
+                (user_id,),
+            ).fetchall()
+        return budzet, transakcje, historia_budzetu, raport_miesieczny, raport_roczny
 
     def obsluz_pliki_statyczne(self, sciezka: str) -> None:
         plik = KATALOG_STATYCZNY / sciezka.removeprefix("/static/")
@@ -1382,6 +1657,7 @@ class ObslugaBudgetBuddy(BaseHTTPRequestHandler):
 def uruchom() -> None:
     przygotuj_baze()
     port = int(os.environ.get("PORT", "8000"))
+    zwolnij_port(port)
     serwer = HTTPServer(("127.0.0.1", port), ObslugaBudgetBuddy)
     print(f"BudgetBuddy dziala pod adresem http://127.0.0.1:{port}")
     serwer.serve_forever()

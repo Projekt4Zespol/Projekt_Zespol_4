@@ -127,7 +127,7 @@ class BudgetBuddyQATests(unittest.TestCase):
 
         strona = self.otworz(
             klient,
-            "/dashboard?category=Jedzenie&transaction_type=expense&sortowanie=kwota_malejaco",
+            "/dashboard/transactions?category=Jedzenie&transaction_type=expense&sortowanie=kwota_malejaco",
         )
 
         self.assertIn("Pizza", strona)
