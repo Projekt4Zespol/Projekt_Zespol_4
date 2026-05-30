@@ -20,9 +20,35 @@ body {
     color: #ffffff;
 }
 
+.branding {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.logo-znak {
+    width: 72px;
+    height: 72px;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(145deg, #f0b429 0%, #ffd36a 100%);
+    color: #123c66;
+    font-weight: 800;
+    font-size: 1.65rem;
+    letter-spacing: 0.06em;
+    box-shadow: 0 10px 24px rgba(9, 24, 40, 0.25);
+}
+
 .naglowek h1,
 .naglowek p {
     margin: 0;
+}
+
+.naglowek h1 {
+    font-size: clamp(2rem, 3vw, 2.9rem);
+    line-height: 1.05;
 }
 
 .etykieta {
@@ -50,10 +76,16 @@ body {
     max-width: 1100px;
     margin: 0 auto;
     padding: 28px 18px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.zawartosc > * {
+    width: 100%;
 }
 
 .komunikat {
-    margin-bottom: 18px;
     padding: 14px 16px;
     border-radius: 12px;
     background: #dff4e7;
@@ -63,7 +95,7 @@ body {
 .siatka,
 .kafelki {
     display: grid;
-    gap: 18px;
+    gap: 24px;
 }
 
 .siatka {
@@ -72,14 +104,16 @@ body {
 
 .kafelki {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    margin-bottom: 18px;
 }
 
 .siatka-analityczna {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 18px;
-    margin-bottom: 18px;
+    gap: 24px;
+}
+
+.siatka-raportow {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
 .sekcja-pojedyncza {
@@ -90,12 +124,8 @@ body {
 .karta {
     background: #ffffff;
     border-radius: 18px;
-    padding: 24px;
+    padding: 30px;
     box-shadow: 0 12px 28px rgba(18, 60, 102, 0.08);
-}
-
-.karta-informacyjna {
-    margin-top: 18px;
 }
 
 .karta-analityczna {
@@ -104,6 +134,14 @@ body {
 
 .formularz-karta {
     width: min(100%, 460px);
+}
+
+.karta-powitalna {
+    min-height: 100%;
+}
+
+.karta-przegladu {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
 .karta-formularza-transakcji {
@@ -157,6 +195,31 @@ body {
 .naglowek-karty-analitycznej strong {
     font-size: 1.35rem;
     color: #123c66;
+}
+
+.zakladki-panelu {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.zakladka-panelu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 18px;
+    border-radius: 999px;
+    background: #e7eef6;
+    color: #214364;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.zakladka-aktywna {
+    background: #123c66;
+    color: #ffffff;
+    box-shadow: 0 10px 20px rgba(18, 60, 102, 0.18);
 }
 
 .tor-postepu {
@@ -237,6 +300,80 @@ body {
     height: 100%;
     border-radius: 999px;
     background: linear-gradient(90deg, #123c66 0%, #4a84bf 100%);
+}
+
+.wykres-kolowy-uklad {
+    display: grid;
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: center;
+}
+
+.wykres-kolowy-blok {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.wykres-kolowy {
+    width: 230px;
+    height: 230px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+.wykres-kolowy-suma {
+    position: absolute;
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    box-shadow: 0 8px 18px rgba(18, 60, 102, 0.08);
+}
+
+.wykres-kolowy-suma span {
+    font-size: 0.8rem;
+    color: #5d6b7a;
+    margin-bottom: 4px;
+}
+
+.wykres-kolowy-suma strong {
+    color: #123c66;
+    font-size: 1.05rem;
+}
+
+.legenda-wykresu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.legenda-wykresu li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #f5f9fd;
+}
+
+.kolor-legendy {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+}
+
+.legenda-wykresu strong {
+    color: #123c66;
 }
 
 .brak-danych-analitycznych {
@@ -381,7 +518,7 @@ select {
     align-items: flex-start;
     gap: 16px;
     flex-wrap: wrap;
-    margin-bottom: 18px;
+    margin-bottom: 22px;
 }
 
 .pasek-filtrow {
@@ -395,6 +532,7 @@ select {
     overflow-x: auto;
     border: 1px solid #e2eaf2;
     border-radius: 16px;
+    margin-top: 16px;
 }
 
 table {
@@ -424,6 +562,17 @@ th {
         padding: 20px;
     }
 
+    .branding {
+        gap: 14px;
+    }
+
+    .logo-znak {
+        width: 58px;
+        height: 58px;
+        font-size: 1.3rem;
+        border-radius: 18px;
+    }
+
     .zawartosc {
         padding: 20px 14px 36px;
     }
@@ -438,5 +587,13 @@ th {
 
     .pasek-filtrow {
         justify-content: flex-start;
+    }
+
+    .wykres-kolowy-uklad {
+        grid-template-columns: 1fr;
+    }
+
+    .karta {
+        padding: 24px;
     }
 }
